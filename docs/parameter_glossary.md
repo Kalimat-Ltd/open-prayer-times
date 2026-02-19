@@ -34,18 +34,18 @@ At high latitudes (roughly above 48°), the sun may not dip far enough below the
 
 - `high_lat_method`:
   Fallback strategy used when astronomical Fajr or Isha cannot be computed:
-  - `0` = **Angle-Based Fraction** — proportions the available night by the ratio of the requested angle to a reference angle.
-  - `1` = **One Seventh of Night** — divides sunset-to-sunrise into sevenths; Isha = sunset + 1/7, Fajr = sunrise − 1/7.
-  - `2` = **Midnight** — Isha and Fajr are placed symmetrically around solar midnight.
-  - `3` = **Aqrab Al-Bilad** — borrows prayer times from the nearest lower-latitude city where standard calculation works.
+  - `0` = **Angle-Based Fraction** — proportions the available night by the ratio of the requested angle to a reference angle
+  - `1` = **One Seventh of Night** — divides sunset-to-sunrise into sevenths; Isha = sunset + 1/7, Fajr = sunrise − 1/7
+  - `2` = **Midnight** — Isha and Fajr are placed symmetrically around solar midnight
+  - `3` = **Aqrab Al-Bilad** — borrows prayer times from the nearest lower-latitude city where standard calculation works
 - `high_lat_start_date`, `high_lat_end_date`:
   Calendar window (YYYY-MM-DD) where high-latitude handling is active. Outside this window the calculator uses standard astronomical computation. Typically set to the seasonal period when the city experiences problematic twilight.
 - `isha_harag`:
   Post-calculation Isha capping for cities where Isha would otherwise fall unreasonably late, even outside the high-lat window:
-  - `0` = off (default — no capping).
-  - `1` = cap Isha at the summer-solstice sunset time + 65 minutes.
-  - `2` = take the earlier of the 15° solar depression time or one-seventh of night.
-  - `3` = hard cap Isha at 23:00 local time.
+  - `0` = off (default — no capping)
+  - `1` = cap Isha at the summer-solstice sunset time + 65 minutes
+  - `2` = take the earlier of the 15° solar depression time or one-seventh of night
+  - `3` = hard cap Isha at 23:00 local time
 - `custom_fajr_angle`, `custom_isha_angle`:
   Optional custom angles used by Stage 2 when high-lat improvement requires explicit angle override.
 - `high_lat_fallback_method`:
@@ -105,7 +105,7 @@ This section is a practical guide for how parameters usually shift prayer times 
 
 - **Fajr**: `latitude`, `longitude`, `fajr_angle`
 - **Shurooq**: `latitude`, `longitude`, `temp`, `pressure`, `elevation`
-- **Dhuhr**: `longitude` is the core driver. In some countries/methodologies, a fixed **safety buffer** is added after calculated zawal (solar noon) to avoid entering prayer at the edge of **وقت النهي**; this shifts published Dhuhr later than pure astronomical noon.
+- **Dhuhr**: `longitude` is the core driver. In some countries/methodologies, a fixed **safety buffer** is added after calculated zawal (solar noon) to avoid entering prayer at the edge of **وقت النهي**; this shifts published Dhuhr later than pure astronomical noon
 - **Asr**: `latitude`, `longitude`, `asr_madhab`, `pressure`
 - **Maghrib**: `latitude`, `longitude`, `temp`, `pressure`, `elevation`
 - **Isha**: `latitude`, `longitude`, `isha_angle`, `elevation`
@@ -120,9 +120,9 @@ Because we only observe final published times (not the provider's full internal 
 
 Operational principle:
 
-- prioritize closeness to trusted reference schedules,
-- keep parameters within configured physical search limits,
-- and treat optimized environment values as model-fit parameters when necessary.
+- prioritize closeness to trusted reference schedules
+- keep parameters within configured physical search limits
+- and treat optimized environment values as model-fit parameters when necessary
 
 ## 6) Stable vs Unstable Days
 
@@ -140,17 +140,17 @@ This distinction is foundational to the multistage optimizer.
 
 Why this split exists:
 
-- Fitting core astronomical parameters (latitude, longitude, angles) on *all* dates — including ones affected by clock shifts or seasonal anomalies — would distort the fit. The optimizer would try to find a single angle that works for both normal and abnormal dates, producing a compromise that is wrong for both.
-- By isolating stable days for core fitting, the resulting parameters are globally meaningful and accurate for the majority of the year.
-- Specialized correction layers (Stage 2 high-lat methods, Stage 3 residual harmonics) can then target only the unstable windows without contaminating the core fit.
+- Fitting core astronomical parameters (latitude, longitude, angles) on *all* dates — including ones affected by clock shifts or seasonal anomalies — would distort the fit. The optimizer would try to find a single angle that works for both normal and abnormal dates, producing a compromise that is wrong for both
+- By isolating stable days for core fitting, the resulting parameters are globally meaningful and accurate for the majority of the year
+- Specialized correction layers (Stage 2 high-lat methods, Stage 3 residual harmonics) can then target only the unstable windows without contaminating the core fit
 
 ## 7) Pipeline Runtime Data Model
 
 The production pipeline now threads a mutable `PipelineContext` across all stages:
 
-1. Stage 1 creates context with core results + baseline corrections.
-2. Stage 2 mutates only high-latitude fields when accepted.
-3. Stage 3 may add residual payloads/evaluation metadata when accepted.
+1. Stage 1 creates context with core results + baseline corrections
+2. Stage 2 mutates only high-latitude fields when accepted
+3. Stage 3 may add residual payloads/evaluation metadata when accepted
 
 Each stage also returns lightweight diagnostics dataclasses:
 

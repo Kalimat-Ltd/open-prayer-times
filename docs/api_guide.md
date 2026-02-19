@@ -9,7 +9,7 @@ Read [parameter_glossary.md](parameter_glossary.md) before using optimizer/calcu
 ### `optimize_city_from_reference`
 
 - Module: `src/app/application/optimization_use_case.py`
-- Purpose: optimize one city using a reference schedule and return `OptimizationResult`.
+- Purpose: optimize one city using a reference schedule and return `OptimizationResult`
 
 Parameters:
 
@@ -24,7 +24,7 @@ Parameters:
 ### `estimate_city_angles_from_reference`
 
 - Module: `src/app/application/optimizer_service.py`
-- Purpose: quick angle estimation from reference data — returns approximate `(fajr_angle, isha_angle)` without running the full multistage pipeline. Useful for getting a reasonable starting point before full optimization.
+- Purpose: quick angle estimation from reference data — returns approximate `(fajr_angle, isha_angle)` without running the full multistage pipeline. Useful for getting a reasonable starting point before full optimization
 
 Parameters:
 
@@ -40,7 +40,7 @@ Returns: `Optional[Tuple[float, float]]` — `(fajr_angle, isha_angle)` or `None
 ### `calculate_city_day_from_loc_csv`
 
 - Module: `src/app/application/use_cases.py`
-- Purpose: compute one city-day's prayer times using the parameters stored in `loc.csv`. This is the same calculation the GUI performs when you click on a city.
+- Purpose: compute one city-day's prayer times using the parameters stored in `loc.csv`. This is the same calculation the GUI performs when you click on a city
 
 Parameters:
 
@@ -57,7 +57,7 @@ Returns: prayer times dict with keys like `fajr`, `shurooq`, `dhuhr`, `asr`, `ma
 ### `run_multistage_optimization`
 
 - Module: `src/app/infrastructure/optimizer/multistage/pipeline.py`
-- Purpose: full Stage 1 → Stage 2 → Stage 3 optimization.
+- Purpose: full Stage 1 → Stage 2 → Stage 3 optimization
 - Returns: `OptimizationResult`
 
 Key inputs:
@@ -81,7 +81,7 @@ These are internal optimizer components but useful for advanced workflows:
 ### `calculate_prayer_times`
 
 - Module: `src/app/infrastructure/prayer_calculator.py`
-- Purpose: core prayer-time computation engine (PyEphem-based). This is the low-level function that all higher-level APIs ultimately call. It takes raw numeric parameters (lat, lon, angles, offsets, etc.) and returns calculated times for a single date.
+- Purpose: core prayer-time computation engine (PyEphem-based). This is the low-level function that all higher-level APIs ultimately call. It takes raw numeric parameters (lat, lon, angles, offsets, etc.) and returns calculated times for a single date
 
 For typed call construction, use `PrayerCalculationRequest` (`src/app/domain/models.py`) which bundles all required parameters into a single object — then pass its fields to `calculate_prayer_times`.
 
@@ -134,7 +134,7 @@ print(result.calculation_method, result.asr_madhab)
 
 ## 5) Integration guidance
 
-- Prefer application-layer APIs for external integrations.
-- Treat stage functions as advanced/internal APIs.
-- Keep reference data quality high; optimizer quality is reference-bound.
-- Re-check docs when stage contracts evolve.
+- Prefer application-layer APIs for external integrations
+- Treat stage functions as advanced/internal APIs
+- Keep reference data quality high; optimizer quality is reference-bound
+- Re-check docs when stage contracts evolve

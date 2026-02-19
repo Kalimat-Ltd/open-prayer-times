@@ -6,12 +6,12 @@ It uses a multi-stage optimization pipeline to fit city parameters from referenc
 
 ## Features
 
-- **Prayer-time calculation** — astronomical engine (PyEphem) with angle-based and moonsighting modes, high-latitude handling, and environmental parameters.
-- **Multi-stage optimizer** — three-stage pipeline (astronomical core → high-latitude adaptation → correction layers) for reference-driven city calibration.
-- **GUI application** — tkinter desktop app for browsing cities, calculating prayer times, running single-city optimization, and batch country optimization.
-- **CLI tools** — command-line interfaces for day calculation.
-- **Reference-driven workflows** — per-country datasets in `reference/` for validation and fitting.
-- **Automated test suite** — regression and integration tests for calculator, optimizer stages, and GUI-related flows.
+- **Prayer-time calculation** — astronomical engine (PyEphem) with angle-based and moonsighting modes, high-latitude handling, and environmental parameters
+- **Multi-stage optimizer** — three-stage pipeline (astronomical core → high-latitude adaptation → correction layers) for reference-driven city calibration
+- **GUI application** — tkinter desktop app for browsing cities, calculating prayer times, running single-city optimization, and batch country optimization
+- **CLI tools** — command-line interfaces for day calculation
+- **Reference-driven workflows** — per-country datasets in `reference/` for validation and fitting
+- **Automated test suite** — regression and integration tests for calculator, optimizer stages, and GUI-related flows
 
 ## Background: Why This Project Exists
 
@@ -35,9 +35,9 @@ Countries and mosques publish prayer times, but they rarely disclose exactly how
 
 ## Reference Methodology Notes
 
-- The project supports both angle-based and moonsighting workflows.
+- The project supports both angle-based and moonsighting workflows
 - A commonly used public moonsighting reference source is: https://www.moonsighting.com/
-- Different providers may publish different conventions; optimizer quality depends on consistent reference methodology per city.
+- Different providers may publish different conventions; optimizer quality depends on consistent reference methodology per city
 
 ## Installation
 
@@ -102,18 +102,18 @@ Production optimization runs through `run_multistage_optimization(...)` in `src/
 Before stage details, see the shared terminology guide: [docs/parameter_glossary.md](docs/parameter_glossary.md).
 
 - **Stage 1 — Astronomical core + normalization**
-  - calibrates core parameters (coordinates, fajr/isha angles, method behavior),
-  - performs geographic and environmental calibration,
-  - detects and normalizes reference clock-shift blocks,
-  - fits stable-date prayer offsets,
-  - outputs the baseline parameter set used by downstream stages.
+  - calibrates core parameters (coordinates, fajr/isha angles, method behavior)
+  - performs geographic and environmental calibration
+  - detects and normalizes reference clock-shift blocks
+  - fits stable-date prayer offsets
+  - outputs the baseline parameter set used by downstream stages
 - **Stage 2 — High-latitude adaptation**
-  - runs only when Stage 1 flags problematic date ranges,
-  - evaluates high-latitude candidates,
-  - applies changes only when problematic-window quality improves.
+  - runs only when Stage 1 flags problematic date ranges
+  - evaluates high-latitude candidates
+  - applies changes only when problematic-window quality improves
 - **Stage 3 — Correction layers**
-  - optionally fits residual harmonic corrections on unstable periods,
-  - accepts residual layers only when gain thresholds are met.
+  - optionally fits residual harmonic corrections on unstable periods
+  - accepts residual layers only when gain thresholds are met
 
 Internal orchestration uses a typed mutable `PipelineContext` plus per-stage diagnostics dataclasses (`Stage1Diagnostics`, `Stage2Diagnostics`, `Stage3Diagnostics`) instead of large dict handoffs.
 
@@ -135,25 +135,25 @@ Internal orchestration uses a typed mutable `PipelineContext` plus per-stage dia
 
 For day-to-day GUI usage, see [docs/gui_architecture.md](docs/gui_architecture.md), including:
 
-- how to calculate prayer times for a city,
-- how to add/modify city parameters,
-- how to add/manage reference files,
-- how single-city optimization works,
-- how batch (country-level) optimization works.
+- how to calculate prayer times for a city
+- how to add/modify city parameters
+- how to add/manage reference files
+- how single-city optimization works
+- how batch (country-level) optimization works
 
 Reference-file format details are in [docs/data_formats.md](docs/data_formats.md).
 
 ## Current Limitations and Contribution Needs
 
-- Current reference coverage is limited: `reference/` currently contains datasets for about **81 countries**.
-- Many countries/cities are still missing reference files.
-- Optimization quality is fundamentally limited by reference-data quality and coverage.
+- Current reference coverage is limited: `reference/` currently contains datasets for about **81 countries**
+- Many countries/cities are still missing reference files
+- Optimization quality is fundamentally limited by reference-data quality and coverage
 
 High-impact contributions:
 
-1. Add reliable reference schedules for new cities/countries.
-2. Improve existing files with more accurate and complete yearly coverage.
-3. Include source notes (organization/methodology) when submitting new datasets.
+1. Add reliable reference schedules for new cities/countries
+2. Improve existing files with more accurate and complete yearly coverage
+3. Include source notes (organization/methodology) when submitting new datasets
 
 See [docs/data_formats.md](docs/data_formats.md) for required file format and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution workflow.
 

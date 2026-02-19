@@ -15,10 +15,10 @@ Stage 1 is the **astronomical core calibration** stage in the multistage optimiz
 
 It is responsible for:
 
-1. structural astronomy fit (lat/lon + Fajr/Isha + method behavior),
-2. geographic/environment calibration,
-3. reference clock-shift block normalization,
-4. stable-date prayer offset fitting.
+1. structural astronomy fit (lat/lon + Fajr/Isha + method behavior)
+2. geographic/environment calibration
+3. reference clock-shift block normalization
+4. stable-date prayer offset fitting
 
 It intentionally does **not** fit residual harmonic corrections (Stage 3 responsibility).
 
@@ -36,8 +36,8 @@ Return value is now a typed tuple:
 
 Stage 1 separates dates into reliability classes:
 
-- **Stable days** (`dates_used_for_core`) are used for structural fitting.
-- **Unstable/problematic days** are represented via `excluded_date_ranges` and handled later by Stage 2/3.
+- **Stable days** (`dates_used_for_core`) are used for structural fitting
+- **Unstable/problematic days** are represented via `excluded_date_ranges` and handled later by Stage 2/3
 
 This avoids overfitting difficult seasonal windows when learning global astronomy parameters.
 
@@ -45,19 +45,19 @@ This avoids overfitting difficult seasonal windows when learning global astronom
 
 High-level sequence in `optimize_pure_astronomical_core(...)`:
 
-1. **Detect reference clock-shift artifacts** — scan the reference data for date ranges where all prayers are shifted by the same constant amount (e.g., +60 min during DST). These dates are excluded from core fitting to avoid biasing the angle search.
-2. **Detect non-solar days** — identify dates where astronomical sunrise/sunset cannot be computed normally (polar summer/winter). These are excluded because they require fallback methods, not angle calibration.
-3. **Build filtered candidate set** — after removing clock-shifted and non-solar dates, assemble the pool of "clean" dates used for structural fitting.
-4. **Iteratively optimize core params and clean-day selection** — run a robust optimization loop (Huber/Tukey loss) over latitude, longitude, fajr_angle, and isha_angle. After each pass, re-evaluate which dates qualify as "clean" vs. outlier, and repeat until the clean set stabilizes. This avoids fitting core parameters to dates that are actually problematic.
-5. **Method/shafaq selection** — compare `angle_based` vs `moonsighting` (and shafaq variants) to identify which calculation method best matches the reference data.
-6. **Optional Asr madhab detection** — if Asr errors are high, test Standard vs. Hanafi Asr to find the better fit.
-7. **Local MAE angle polish** — fine-grid search around the current fajr_angle and isha_angle to minimize MAE on clean dates.
-8. **Geographic calibration** — grid-search longitude, then latitude, within a configurable radius to compensate for systematic reference biases.
-9. **Environmental calibration** — sequential grid search over elevation, temperature, and pressure to fine-tune atmospheric refraction effects.
-10. **Final quick angle retest** — one more angle polish pass after geographic/environmental changes.
-11. **Clock-shift block normalization** — build the final `clock_offsets` JSON payload from detected clock-shift windows.
-12. **Stable-date offset fitting** — compute per-prayer constant minute offsets on stable dates to absorb any remaining systematic bias.
-13. **Build `PipelineContext` + `Stage1Diagnostics`** — package all fitted parameters, correction payloads, and timing metadata for downstream stages.
+1. **Detect reference clock-shift artifacts** — scan the reference data for date ranges where all prayers are shifted by the same constant amount (e.g., +60 min during DST). These dates are excluded from core fitting to avoid biasing the angle search
+2. **Detect non-solar days** — identify dates where astronomical sunrise/sunset cannot be computed normally (polar summer/winter). These are excluded because they require fallback methods, not angle calibration
+3. **Build filtered candidate set** — after removing clock-shifted and non-solar dates, assemble the pool of "clean" dates used for structural fitting
+4. **Iteratively optimize core params and clean-day selection** — run a robust optimization loop (Huber/Tukey loss) over latitude, longitude, fajr_angle, and isha_angle. After each pass, re-evaluate which dates qualify as "clean" vs. outlier, and repeat until the clean set stabilizes. This avoids fitting core parameters to dates that are actually problematic
+5. **Method/shafaq selection** — compare `angle_based` vs `moonsighting` (and shafaq variants) to identify which calculation method best matches the reference data
+6. **Optional Asr madhab detection** — if Asr errors are high, test Standard vs. Hanafi Asr to find the better fit
+7. **Local MAE angle polish** — fine-grid search around the current fajr_angle and isha_angle to minimize MAE on clean dates
+8. **Geographic calibration** — grid-search longitude, then latitude, within a configurable radius to compensate for systematic reference biases
+9. **Environmental calibration** — sequential grid search over elevation, temperature, and pressure to fine-tune atmospheric refraction effects
+10. **Final quick angle retest** — one more angle polish pass after geographic/environmental changes
+11. **Clock-shift block normalization** — build the final `clock_offsets` JSON payload from detected clock-shift windows
+12. **Stable-date offset fitting** — compute per-prayer constant minute offsets on stable dates to absorb any remaining systematic bias
+13. **Build `PipelineContext` + `Stage1Diagnostics`** — package all fitted parameters, correction payloads, and timing metadata for downstream stages
 
 ## 5) Core optimization vector
 
@@ -141,8 +141,8 @@ Environmental variables (`elevation`, `temp`, `pressure`) are calibrated in dedi
 
 Pipeline uses Stage 1 context as the baseline for Stage 2 and Stage 3.
 
-- Stage 2 mutates high-lat fields only when accepted.
-- Stage 3 consumes Stage 1 offsets/clock metadata and can refine correction payloads.
+- Stage 2 mutates high-lat fields only when accepted
+- Stage 3 consumes Stage 1 offsets/clock metadata and can refine correction payloads
 
 ## 9) Recommended verification
 

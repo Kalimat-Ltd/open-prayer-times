@@ -35,10 +35,10 @@ Signature uses typed context:
 
 Stage 2 searches for the best combination of high-latitude handling parameters by testing each option against the problematic date windows identified by Stage 1. The search space includes:
 
-- `high_lat_method` — which fallback algorithm to use (Angle-Based Fraction, One Seventh, Midnight, Aqrab Al-Bilad).
-- `isha_harag` — Isha capping mode (off, solstice+65min, min(15°/one-seventh), 23:00 cap).
-- optional `custom_fajr_angle` / `custom_isha_angle` — explicit angle overrides for the problematic window that differ from the Stage 1 global angles.
-- optional `high_lat_fallback_method` — secondary fallback when the primary high-lat method cannot produce a result for a specific date.
+- `high_lat_method` — which fallback algorithm to use (Angle-Based Fraction, One Seventh, Midnight, Aqrab Al-Bilad)
+- `isha_harag` — Isha capping mode (off, solstice+65min, min(15°/one-seventh), 23:00 cap)
+- optional `custom_fajr_angle` / `custom_isha_angle` — explicit angle overrides for the problematic window that differ from the Stage 1 global angles
+- optional `high_lat_fallback_method` — secondary fallback when the primary high-lat method cannot produce a result for a specific date
 
 Each combination is evaluated by computing prayer times for the problematic dates and comparing them against the reference schedule. The combination that produces the lowest MAE on those dates wins.
 
@@ -46,8 +46,8 @@ Each combination is evaluated by computing prayer times for the problematic date
 
 Stage 2 compares the problematic-window MAE **before** (using Stage 1 baseline settings) and **after** (using the best high-lat candidate). This ensures the high-lat adaptation is only applied when it actually helps:
 
-- If `require_mae_improvement=True` (default), the candidate must produce a strictly lower MAE on the problematic dates than the Stage 1 baseline.
-- If the improvement is too small or the problematic date count is below `min_problematic_days`, Stage 2 is skipped entirely and Stage 1 settings are preserved.
+- If `require_mae_improvement=True` (default), the candidate must produce a strictly lower MAE on the problematic dates than the Stage 1 baseline
+- If the improvement is too small or the problematic date count is below `min_problematic_days`, Stage 2 is skipped entirely and Stage 1 settings are preserved
 
 ## 6) Context mutations and diagnostics
 
@@ -84,6 +84,6 @@ Stage 2 compares the problematic-window MAE **before** (using Stage 1 baseline s
 
 ## 8) Operational guidance
 
-- Keep candidate grids practical for production runtime.
-- Treat Stage 2 as a targeted seasonal/high-lat correction layer, not a replacement for Stage 1 astronomy.
-- Validate problematic-window gain and whole-year stability together.
+- Keep candidate grids practical for production runtime
+- Treat Stage 2 as a targeted seasonal/high-lat correction layer, not a replacement for Stage 1 astronomy
+- Validate problematic-window gain and whole-year stability together

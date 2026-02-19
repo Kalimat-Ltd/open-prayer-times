@@ -3,10 +3,10 @@
 Open Prayer Times is an open-source Python application for computing and calibrating daily prayer times for cities worldwide.
 
 The project combines:
-- a desktop GUI (tkinter) for city management, prayer-time display, and optimization workflows,
-- CLI entry points for automation and scripting,
-- a multi-stage optimizer to calibrate city parameters against trusted reference schedules,
-- data tooling for reference file ingestion and quality checks.
+- a desktop GUI (tkinter) for city management, prayer-time display, and optimization workflows
+- CLI entry points for automation and scripting
+- a multi-stage optimizer to calibrate city parameters against trusted reference schedules
+- data tooling for reference file ingestion and quality checks
 
 ## Read This First: Key Parameters and Concepts
 
@@ -22,21 +22,21 @@ This glossary is the canonical terminology source for all architecture docs.
 
 ## Core Goals
 
-- Produce accurate daily prayer times per city using astronomical calculations (PyEphem).
-- Fit city-specific parameters from authoritative reference files.
-- Handle difficult regions (high latitude, seasonal clock shifts, unstable periods).
+- Produce accurate daily prayer times per city using astronomical calculations (PyEphem)
+- Fit city-specific parameters from authoritative reference files
+- Handle difficult regions (high latitude, seasonal clock shifts, unstable periods)
 
 ## Real-World Challenges
 
 Computing prayer times involves well-understood astronomy, but matching the times communities actually use is harder than it appears.
 
-1. **No single global standard.** There is no universal authority. Each country, organization, or mosque may use its own angles, calculation method, and post-processing rules. In non-Muslim-majority countries there is often no official ministry producing a national schedule, so even neighboring mosques may display different times. This project identifies the most widely used schedule per region, treats it as the reference, and calibrates parameters to reproduce it.
+1. **No single global standard.** There is no universal authority. Each country, organization, or mosque may use its own angles, calculation method, and post-processing rules. In non-Muslim-majority countries there is often no official ministry producing a national schedule, so even neighboring mosques may display different times. This project identifies the most widely used schedule per region, treats it as the reference, and calibrates parameters to reproduce it
 
-2. **High-latitude difficulties.** Above roughly 48° latitude, the sun may not reach the depression angles needed for standard Fajr/Isha computation — especially from late March through late October (northern hemisphere). Approximation methods (angle fractions, 1/7 of night, midnight, nearest-city) are commonly used during those windows. Stage 2 of the optimizer detects the problematic dates and evaluates which fallback best matches the reference.
+2. **High-latitude difficulties.** Above roughly 48° latitude, the sun may not reach the depression angles needed for standard Fajr/Isha computation — especially from late March through late October (northern hemisphere). Approximation methods (angle fractions, 1/7 of night, midnight, nearest-city) are commonly used during those windows. Stage 2 of the optimizer detects the problematic dates and evaluates which fallback best matches the reference
 
-3. **Extreme latitudes.** Above roughly 64°, the sun may not set or rise for weeks. Approximation is then needed for Maghrib and Shurooq as well, and communities typically borrow schedules from lower-latitude cities or use simplified rules.
+3. **Extreme latitudes.** Above roughly 64°, the sun may not set or rise for weeks. Approximation is then needed for Maghrib and Shurooq as well, and communities typically borrow schedules from lower-latitude cities or use simplified rules
 
-4. **Unknown calculation methods.** Authorities publish prayer times without disclosing internal calculations, rounding, safety buffers, or seasonal adjustments. At high latitudes the unknowns multiply because the approximation method is also undisclosed. The optimizer addresses this by searching for the parameter combination that best reproduces the published schedule — regardless of how it was originally computed.
+4. **Unknown calculation methods.** Authorities publish prayer times without disclosing internal calculations, rounding, safety buffers, or seasonal adjustments. At high latitudes the unknowns multiply because the approximation method is also undisclosed. The optimizer addresses this by searching for the parameter combination that best reproduces the published schedule — regardless of how it was originally computed
 
 ## Architecture
 
@@ -75,6 +75,6 @@ Each stage also returns a lightweight diagnostics dataclass (`Stage1Diagnostics`
 
 ## Practical usage and limits
 
-- GUI usage workflows (window layout, calculation, city management, single/batch optimization, reference file watcher, RMSE cache) are documented in [gui_architecture.md](gui_architecture.md).
-- Reference file authoring format is documented in [data_formats.md](data_formats.md).
-- Current reference-data coverage is incomplete (about 81 countries in `reference/`), so adding validated datasets for new locations is a key contribution area.
+- GUI usage workflows (window layout, calculation, city management, single/batch optimization, reference file watcher, RMSE cache) are documented in [gui_architecture.md](gui_architecture.md)
+- Reference file authoring format is documented in [data_formats.md](data_formats.md)
+- Current reference-data coverage is incomplete (about 81 countries in `reference/`), so adding validated datasets for new locations is a key contribution area
