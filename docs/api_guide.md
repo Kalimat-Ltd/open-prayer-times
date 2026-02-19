@@ -96,16 +96,7 @@ python -m src.app.presentation.gui_app
 ### CLI: day calculation
 
 ```bash
-python -m src.app.presentation.cli --city "Russia, Kazan" --date 2025-01-15
-```
-
-### CLI: optimization
-
-```bash
-python -m src.app.presentation.optimizer_cli \
-  --city "Russia, Kazan" \
-  --reference-file reference/RU/russia_kazan.txt \
-  --timezone-offset 3
+python -m src.app.presentation.cli --city "Egypt, Cairo" --date 2025-01-15
 ```
 
 ## 4) Programmatic examples
@@ -117,10 +108,10 @@ from pathlib import Path
 from src.app.application.optimization_use_case import optimize_city_from_reference
 
 result = optimize_city_from_reference(
-    city_name="Russia, Kazan",
-    reference_file=Path("reference/RU/russia_kazan.txt"),
+  city_name="Egypt, Cairo",
+  reference_file=Path("reference/EG/egypt_cairo.txt"),
     loc_csv_path=Path("loc.csv"),
-    timezone_offset_hours=3,
+  timezone_offset_hours=2,
 )
 
 print(result.mae_total, result.rmse_total)
@@ -135,7 +126,7 @@ result = run_multistage_optimization(
     location_data=location_data,
     reference_times=reference_times,
     available_dates=available_dates,
-    tz_name="Europe/Paris",
+  tz_name="Africa/Cairo",
 )
 
 print(result.calculation_method, result.asr_madhab)

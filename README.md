@@ -62,20 +62,13 @@ You can run commands as Python modules (works directly from source):
 python -m src.app.presentation.gui_app
 
 # Day calculation CLI
-python -m src.app.presentation.cli --city "Russia, Kazan" --date 2025-01-15
-
-# Optimization CLI
-python -m src.app.presentation.optimizer_cli \
-  --city "Russia, Kazan" \
-  --reference-file reference/RU/russia_kazan.txt \
-  --timezone-offset 3
+python -m src.app.presentation.cli --city "Egypt, Cairo" --date 2025-01-15
 ```
 
 After installing the package, script entry points are also available:
 
 ```bash
-open-prayer-times --city "Russia, Kazan" --date 2025-01-15
-open-prayer-times-optimize --city "Russia, Kazan" --reference-file reference/RU/russia_kazan.txt --timezone-offset 3
+open-prayer-times --city "Egypt, Cairo" --date 2025-01-15
 open-prayer-times-gui
 ```
 

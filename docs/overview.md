@@ -60,8 +60,7 @@ Each stage also returns a lightweight diagnostics dataclass (`Stage1Diagnostics`
 | Path | Command |
 |------|---------|
 | GUI | `python -m src.app.presentation.gui_app` |
-| CLI day calculation | `python -m src.app.presentation.cli --city "Russia, Kazan" --date 2025-01-15` |
-| CLI optimization | `python -m src.app.presentation.optimizer_cli --city "Russia, Kazan" --reference-file reference/RU/russia_kazan.txt --timezone-offset 3` |
+| CLI day calculation | `python -m src.app.presentation.cli --city "Egypt, Cairo" --date 2025-01-15` |
 
 ## Documentation Map
 
