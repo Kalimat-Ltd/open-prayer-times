@@ -1,0 +1,1854 @@
+# ruff: noqa: BLE001, F541, ARG002
+# pylint: disable=broad-exception-caught
+import tkinter as tk
+from tkinter import ttk, messagebox, Toplevel
+import os
+import datetime
+import math
+import threading
+import queue
+import numpy as np
+from typing import List, Literal
+
+from src.app.infrastructure.optimizer.objective import (
+    _compute_detailed_errors,
+    _is_mae_priority_improvement,
+)
+from src.app.infrastructure.optimizer.shared import (
+    OFFSET_FIELDS,
+    PRAYER_NAMES,
+    _filter_cities_by_conservative_rules,
+    _find_closest_city_by_distance,
+    _load_reference_file,
+    _load_residual_model_from_json,
+    _matches_conservative_rules,
+)
+from src.app.infrastructure.optimizer.multistage.pipeline import (
+    run_multistage_optimization,
+)
+
+
+def _reset_stage1_defaults(loc_dict):
+    loc_dict["optimized_lat"] = None
+    loc_dict["optimized_lon"] = None
+    loc_dict["fajr_angle"] = 17.0
+    loc_dict["isha_angle"] = 18.0
+    loc_dict["elevation"] = 0.0
+    loc_dict["pressure"] = 1010.0
+    loc_dict["temp"] = 10.0
+    loc_dict["calculation_method"] = "angle_based"
+    loc_dict["isha_harag"] = 0
+    loc_dict["high_lat_method"] = 0
+    loc_dict["high_lat_start_date"] = None
+    loc_dict["high_lat_end_date"] = None
+    loc_dict["custom_fajr_angle"] = None
+    loc_dict["custom_isha_angle"] = None
+    loc_dict["high_lat_fallback_method"] = None
+    for fld in OFFSET_FIELDS:
+        loc_dict[fld] = None
+    loc_dict["residual_corrections"] = ""
+    loc_dict["clock_offsets"] = ""
+    return loc_dict
+
+
+def _is_stage1_output(opt_result):
+    convergence_info = str(getattr(opt_result, "convergence_info", "") or "").lower()
+    if not convergence_info.startswith("multistage-stage1"):
+        return False
+    # Full multistage outputs also begin with "multistage-stage1 ..." but include
+    # explicit Stage 2/3 markers in the convergence string.
+    if (
+        "stage2=" in convergence_info
+        or "stage3_offsets=" in convergence_info
+        or "stage3_residuals=" in convergence_info
+    ):
+        return False
+    return True
+
+
+_NON_PERSISTENT_OPT_FIELDS = {
+    "offsets",
+    "rmse_total",
+    "mae_total",
+    "per_prayer_rmse",
+    "per_prayer_mae",
+    "per_prayer_max_error",
+    "per_prayer_signed_mean",
+    "duration_seconds",
+    "convergence_info",
+    "original_lat",
+    "original_lon",
+    "distance_moved_km",
+    "n_function_evals",
+    "auxiliary_cities_used",
+    "adaptive_notes",
+    "phase_timings",
+    "latitude",
+    "longitude",
+}
+
+_NULLABLE_FIELD_DEFAULTS = {
+    "residual_corrections": "",
+    "clock_offsets": "",
+    "high_lat_start_date": None,
+    "high_lat_end_date": None,
+    "custom_fajr_angle": None,
+    "custom_isha_angle": None,
+    "high_lat_fallback_method": None,
+}
+
+
+def _extract_result_fields(opt_result):
+    try:
+        return dict(vars(opt_result))
+    except (TypeError, ValueError):
+        return {}
+
+
+def _apply_optimization_result_to_location(
+    loc_dict,
+    opt_result,
+    *,
+    stage1_only=False,
+    apply_coordinates=False,
+):
+    if stage1_only:
+        _reset_stage1_defaults(loc_dict)
+
+    result_fields = _extract_result_fields(opt_result)
+
+    for key, value in result_fields.items():
+        if key in _NON_PERSISTENT_OPT_FIELDS:
+            continue
+        if key not in loc_dict:
+            continue
+        if value is None:
+            if key in _NULLABLE_FIELD_DEFAULTS:
+                loc_dict[key] = _NULLABLE_FIELD_DEFAULTS[key]
+            continue
+        loc_dict[key] = value
+
+    if apply_coordinates:
+        latitude = result_fields.get("latitude")
+        longitude = result_fields.get("longitude")
+        if latitude is not None:
+            loc_dict["optimized_lat"] = latitude
+        if longitude is not None:
+            loc_dict["optimized_lon"] = longitude
+
+    if not stage1_only:
+        offsets = result_fields.get("offsets")
+        if isinstance(offsets, dict):
+            for offset_key, offset_value in offsets.items():
+                if offset_value is None:
+                    continue
+                loc_dict[offset_key] = offset_value
+
+    loc_dict["is_optimized"] = 1
+    return loc_dict
+
+
+# =============================================================================
+# GUI Dialog
+# =============================================================================
+def ask_optimization_result_dialog(parent, title, message):
+    """
+    Creates a custom modal dialog with specific action buttons.
+
+    Returns: 'city', 'country', 'ignore', or None if closed unexpectedly.
+    """
+    dialog = Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+
+    result = None
+
+    def set_result_and_close(action):
+        nonlocal result
+        result = action
+        dialog.destroy()
+
+    main_frame = ttk.Frame(dialog, padding="10 10 10 10")
+    main_frame.pack(expand=True, fill=tk.BOTH)
+
+    message_label = ttk.Label(main_frame, text=message, justify=tk.LEFT, wraplength=500)
+    message_label.pack(pady=(0, 15))
+
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill=tk.X, pady=(5, 0))
+
+    city_button = ttk.Button(
+        button_frame, text="Apply to City", command=lambda: set_result_and_close("city")
+    )
+    city_button.pack(side=tk.LEFT, padx=5, expand=True)
+    city_button.focus_set()
+
+    country_button = ttk.Button(
+        button_frame,
+        text="Apply to Country",
+        command=lambda: set_result_and_close("country"),
+    )
+    country_button.pack(side=tk.LEFT, padx=5, expand=True)
+
+    ignore_button = ttk.Button(
+        button_frame, text="Ignore", command=lambda: set_result_and_close("ignore")
+    )
+    ignore_button.pack(side=tk.LEFT, padx=5, expand=True)
+
+    dialog.update_idletasks()
+    parent_x = parent.winfo_rootx()
+    parent_y = parent.winfo_rooty()
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    dialog_width = dialog.winfo_width()
+    dialog_height = dialog.winfo_height()
+
+    position_x = parent_x + (parent_width // 2) - (dialog_width // 2)
+    position_y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    dialog.geometry(f"+{position_x}+{position_y}")
+
+    dialog.protocol("WM_DELETE_WINDOW", lambda: set_result_and_close("ignore"))
+    parent.wait_window(dialog)
+
+    return result
+
+
+# =============================================================================
+# Batch Optimization Dashboard
+# =============================================================================
+
+
+def _run_country_optimization(
+    country_code,
+    ref_files_info,
+    tf,
+    use_dst,
+    result_queue,
+    stop_event,
+    max_cpu_workers=None,
+):
+    """
+    Run optimization for a single country.  Executed in a background thread.
+
+    ref_files_info: list of (ref_filepath, loc_data_dict) for cities with ref data.
+    Puts messages on result_queue as (country_code, msg_type, payload) tuples.
+    msg_type is one of: 'progress', 'city_done', 'done', 'error'.
+    """
+    _ = max_cpu_workers
+    try:
+        if not ref_files_info:
+            result_queue.put((country_code, "error", "No reference cities found"))
+            return
+
+        all_ref_cities = []
+        for ref_path, loc_d in ref_files_info:
+            ref_times, ref_dates = _load_reference_file(ref_path)
+            if not ref_times:
+                continue
+            city_tz_name = None
+            if tf and use_dst:
+                try:
+                    city_tz_name = tf.timezone_at(
+                        lng=float(loc_d.get("longitude", 0)),
+                        lat=float(loc_d.get("latitude", 0)),
+                    )
+                except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                    pass
+            all_ref_cities.append(
+                {
+                    "name": loc_d["name"],
+                    "reference_times": ref_times,
+                    "available_dates": ref_dates,
+                    "loc": loc_d,
+                    "tz_name": city_tz_name,
+                }
+            )
+
+        if not all_ref_cities:
+            result_queue.put((country_code, "error", "No valid reference data"))
+            return
+
+        city_results = {}
+        total_ref = len(all_ref_cities)
+        for idx, primary_city in enumerate(all_ref_cities, start=1):
+            if stop_event.is_set():
+                result_queue.put((country_code, "error", "Cancelled"))
+                return
+
+            primary_loc = primary_city["loc"]
+            primary_ref_times = primary_city["reference_times"]
+            primary_dates = primary_city["available_dates"]
+            primary_lat = float(primary_loc["latitude"])
+            primary_lon = float(primary_loc["longitude"])
+            primary_tz_name = primary_city.get("tz_name")
+            selected_timezone = primary_loc.get("timezone", 0)
+
+            result_queue.put(
+                (
+                    country_code,
+                    "progress",
+                    f"Optimizing {primary_loc['name']} ({idx}/{total_ref})...",
+                )
+            )
+
+            auxiliary_cities = []
+            for other_city in all_ref_cities:
+                if other_city["name"] == primary_city["name"]:
+                    continue
+                loc_d = other_city["loc"]
+                aux_ref = other_city["reference_times"]
+                aux_dates = other_city["available_dates"]
+                if not aux_ref or not aux_dates:
+                    continue
+
+                aux_lat = float(loc_d.get("latitude", 0))
+                aux_lon = float(loc_d.get("longitude", 0))
+                aux_tz_name = other_city.get("tz_name")
+                aux_tz = loc_d.get("timezone", selected_timezone) or selected_timezone
+
+                auxiliary_cities.append(
+                    {
+                        "name": loc_d["name"],
+                        "latitude": aux_lat,
+                        "longitude": aux_lon,
+                        "elevation": float(loc_d.get("elevation", 0) or 0),
+                        "timezone": aux_tz,
+                        "tz_name": aux_tz_name,
+                        "reference_times": aux_ref,
+                        "available_dates": aux_dates,
+                        "temp": float(loc_d.get("temp", 10.0) or 10.0),
+                        "pressure": float(loc_d.get("pressure", 1010.0) or 1010.0),
+                        "isha_minutes": float(loc_d.get("isha_minutes", 0) or 0),
+                    }
+                )
+
+            conservative_aux = _filter_cities_by_conservative_rules(
+                primary_lat,
+                primary_lon,
+                auxiliary_cities,
+            )
+
+            opt_result = run_multistage_optimization(
+                location_data=primary_loc,
+                reference_times=primary_ref_times,
+                available_dates=primary_dates,
+                tz_name=primary_tz_name,
+            )
+
+            city_results[primary_city["name"]] = {
+                "opt_result": opt_result,
+                "n_dates": len(primary_dates),
+                "n_aux": len(conservative_aux),
+                "has_residual": bool(opt_result.residual_corrections),
+                "duration_seconds": float(opt_result.duration_seconds or 0.0),
+            }
+            result_queue.put(
+                (
+                    country_code,
+                    "city_done",
+                    {
+                        "city": primary_city["name"],
+                        "index": idx,
+                        "total": total_ref,
+                        "has_residual": bool(opt_result.residual_corrections),
+                        "duration_seconds": float(opt_result.duration_seconds or 0.0),
+                    },
+                )
+            )
+
+        baseline_mae_vals = []
+        baseline_rmse_vals = []
+        after_mae_vals = []
+        after_rmse_vals = []
+        baseline_per_prayer_mae = {p: [] for p in PRAYER_NAMES}
+        baseline_per_prayer_rmse = {p: [] for p in PRAYER_NAMES}
+        baseline_per_prayer_max = {p: [] for p in PRAYER_NAMES}
+        after_per_prayer_mae = {p: [] for p in PRAYER_NAMES}
+        after_per_prayer_rmse = {p: [] for p in PRAYER_NAMES}
+        after_per_prayer_max = {p: [] for p in PRAYER_NAMES}
+
+        ref_city_by_name = {c["name"]: c for c in all_ref_cities}
+        for city_name, city_payload in city_results.items():
+            ref_city = ref_city_by_name.get(city_name)
+            if not ref_city:
+                continue
+
+            loc = ref_city["loc"]
+            ref_times = ref_city["reference_times"]
+            dates = ref_city["available_dates"]
+            city_tz_name = ref_city.get("tz_name")
+            timezone_val = loc.get("timezone", 0)
+            elevation_val = float(loc.get("elevation", 0) or 0)
+            isha_minutes_val = float(loc.get("isha_minutes", 0) or 0)
+
+            baseline_params = np.array(
+                [
+                    float(loc.get("fajr_angle", 18.0) or 18.0),
+                    float(loc.get("isha_angle", 17.0) or 17.0),
+                    float(loc.get("optimized_lat") or loc.get("latitude") or 0.0),
+                    float(loc.get("optimized_lon") or loc.get("longitude") or 0.0),
+                    float(loc.get("temp", 10.0) or 10.0),
+                    float(loc.get("pressure", 1010.0) or 1010.0),
+                ],
+                dtype=float,
+            )
+            baseline_offsets = {f: float(loc.get(f, 0.0) or 0.0) for f in OFFSET_FIELDS}
+
+            baseline_residual_model = _load_residual_model_from_json(
+                loc.get("residual_corrections", "")
+            )
+            (
+                baseline_city_rmse,
+                baseline_city_mae,
+                baseline_city_per_prayer_rmse,
+                baseline_city_per_prayer_mae,
+                baseline_city_per_prayer_max,
+                _,
+            ) = _compute_detailed_errors(
+                baseline_params,
+                available_dates=dates,
+                reference_times=ref_times,
+                elevation=elevation_val,
+                timezone=timezone_val,
+                tz_name=city_tz_name,
+                isha_minutes=isha_minutes_val,
+                offsets=baseline_offsets,
+                residual_model=baseline_residual_model,
+                settings_source=loc,
+                clock_offsets_json=loc.get("clock_offsets", "") or "",
+            )
+
+            opt = city_payload["opt_result"]
+            after_params = np.array(
+                [
+                    float(opt.fajr_angle),
+                    float(opt.isha_angle),
+                    float(opt.latitude),
+                    float(opt.longitude),
+                    float(opt.temp),
+                    float(opt.pressure),
+                ],
+                dtype=float,
+            )
+            after_offsets = dict(opt.offsets) if opt.offsets else {}
+            after_residual_model = _load_residual_model_from_json(
+                opt.residual_corrections
+            )
+            (
+                after_city_rmse,
+                after_city_mae,
+                after_city_per_prayer_rmse,
+                after_city_per_prayer_mae,
+                after_city_per_prayer_max,
+                _,
+            ) = _compute_detailed_errors(
+                after_params,
+                available_dates=dates,
+                reference_times=ref_times,
+                elevation=elevation_val,
+                timezone=timezone_val,
+                tz_name=city_tz_name,
+                isha_minutes=isha_minutes_val,
+                offsets=after_offsets,
+                residual_model=after_residual_model,
+                settings_source=[loc, opt],
+                clock_offsets_json=opt.clock_offsets or "",
+            )
+
+            if math.isfinite(baseline_city_mae):
+                baseline_mae_vals.append(float(baseline_city_mae))
+            if math.isfinite(baseline_city_rmse):
+                baseline_rmse_vals.append(float(baseline_city_rmse))
+            if math.isfinite(after_city_mae):
+                after_mae_vals.append(float(after_city_mae))
+            if math.isfinite(after_city_rmse):
+                after_rmse_vals.append(float(after_city_rmse))
+
+            for prayer in PRAYER_NAMES:
+                b_mae = float(baseline_city_per_prayer_mae.get(prayer, float("inf")))
+                b_rmse = float(baseline_city_per_prayer_rmse.get(prayer, float("inf")))
+                b_max = float(baseline_city_per_prayer_max.get(prayer, float("inf")))
+                a_mae = float(after_city_per_prayer_mae.get(prayer, float("inf")))
+                a_rmse = float(after_city_per_prayer_rmse.get(prayer, float("inf")))
+                a_max = float(after_city_per_prayer_max.get(prayer, float("inf")))
+                if math.isfinite(b_mae):
+                    baseline_per_prayer_mae[prayer].append(b_mae)
+                if math.isfinite(b_rmse):
+                    baseline_per_prayer_rmse[prayer].append(b_rmse)
+                if math.isfinite(b_max):
+                    baseline_per_prayer_max[prayer].append(b_max)
+                if math.isfinite(a_mae):
+                    after_per_prayer_mae[prayer].append(a_mae)
+                if math.isfinite(a_rmse):
+                    after_per_prayer_rmse[prayer].append(a_rmse)
+                if math.isfinite(a_max):
+                    after_per_prayer_max[prayer].append(a_max)
+
+        def _mean_or_inf(vals):
+            return float(np.mean(vals)) if vals else float("inf")
+
+        baseline_mae = _mean_or_inf(baseline_mae_vals)
+        baseline_rmse = _mean_or_inf(baseline_rmse_vals)
+        after_mae = _mean_or_inf(after_mae_vals)
+        after_rmse = _mean_or_inf(after_rmse_vals)
+        baseline_per_prayer_mae_avg = {
+            p: _mean_or_inf(v) for p, v in baseline_per_prayer_mae.items()
+        }
+        baseline_per_prayer_rmse_avg = {
+            p: _mean_or_inf(v) for p, v in baseline_per_prayer_rmse.items()
+        }
+        baseline_per_prayer_max_avg = {
+            p: _mean_or_inf(v) for p, v in baseline_per_prayer_max.items()
+        }
+        after_per_prayer_mae_avg = {
+            p: _mean_or_inf(v) for p, v in after_per_prayer_mae.items()
+        }
+        after_per_prayer_rmse_avg = {
+            p: _mean_or_inf(v) for p, v in after_per_prayer_rmse.items()
+        }
+        after_per_prayer_max_avg = {
+            p: _mean_or_inf(v) for p, v in after_per_prayer_max.items()
+        }
+
+        improved = _is_mae_priority_improvement(
+            baseline_mae=baseline_mae,
+            candidate_mae=after_mae,
+            baseline_rmse=baseline_rmse,
+            candidate_rmse=after_rmse,
+            baseline_per_prayer_max=baseline_per_prayer_max_avg,
+            candidate_per_prayer_max=after_per_prayer_max_avg,
+        )
+        if baseline_mae > 0 and baseline_mae != float("inf"):
+            improvement_pct = ((baseline_mae - after_mae) / baseline_mae) * 100
+        else:
+            improvement_pct = 0.0
+
+        total_duration = 0.0
+        for city_payload in city_results.values():
+            total_duration += float(city_payload["opt_result"].duration_seconds or 0.0)
+
+        payload = {
+            "city_results": city_results,
+            "baseline_rmse": baseline_rmse,
+            "baseline_mae": baseline_mae,
+            "baseline_per_prayer_rmse": baseline_per_prayer_rmse_avg,
+            "baseline_per_prayer_mae": baseline_per_prayer_mae_avg,
+            "after_rmse": after_rmse,
+            "after_mae": after_mae,
+            "after_per_prayer_rmse": after_per_prayer_rmse_avg,
+            "after_per_prayer_mae": after_per_prayer_mae_avg,
+            "improved": improved,
+            "improvement_pct": improvement_pct,
+            "n_reference_cities": len(city_results),
+            "duration_seconds": total_duration,
+        }
+        result_queue.put((country_code, "done", payload))
+
+    except (ValueError, TypeError, KeyError, RuntimeError, OSError) as e:
+        import traceback
+
+        result_queue.put((country_code, "error", f"{e}\n{traceback.format_exc()}"))
+
+
+class BatchOptimizationDashboard:
+    """
+    A Toplevel dashboard for optimizing all countries with reference data.
+
+    Features:
+    - Shows all countries with reference data and their optimization status
+    - Runs optimizations in background threads (UI stays responsive)
+    - Before/after MAE comparison per country
+    - Per-country apply/ignore controls
+    - Start All / Stop / Apply Selected buttons
+    """
+
+    # Row status constants
+    STATUS_PENDING = "Pending"
+    STATUS_RUNNING = "Running..."
+    STATUS_DONE_IMPROVED = "Improved"
+    STATUS_DONE_NO_IMPROVE = "No Improvement"
+    STATUS_ERROR = "Error"
+    STATUS_APPLIED = "Applied"
+    STATUS_SKIPPED = "Skipped"
+    STATUS_CANCELLED = "Cancelled"
+
+    def __init__(self, parent_app):
+        """
+        parent_app: the PrayerApp instance (has .root, .locations_data, .tf, .dst_var).
+        """
+        self.app = parent_app
+        self.root = parent_app.root
+        self.result_queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.current_thread = None
+        self.country_results = {}  # country_code -> payload dict
+        self.is_running = False
+        self.pending_queue = []  # List of country codes to process sequentially
+        self.use_dst = False
+        self.total_to_run = 0
+        self.completed_count = 0
+
+        self._build_window()
+        self._discover_countries()
+        self._populate_table()
+        self._poll_queue()
+
+    def _build_window(self):
+        self.win = Toplevel(self.root)
+        self.win.title("Batch Country Optimization Dashboard")
+        self.win.geometry("1050x650")
+        self.win.minsize(900, 500)
+        self.win.transient(self.root)
+        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # --- Top controls ---
+        ctrl_frame = ttk.Frame(self.win, padding="8 8 8 4")
+        ctrl_frame.pack(fill=tk.X)
+
+        self.start_btn = ttk.Button(
+            ctrl_frame, text="Start All", command=self._start_all
+        )
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.stop_btn = ttk.Button(
+            ctrl_frame, text="Stop", command=self._stop_all, state=tk.DISABLED
+        )
+        self.stop_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        ttk.Separator(ctrl_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8, pady=2
+        )
+
+        self.enable_all_btn = ttk.Button(
+            ctrl_frame, text="Enable All", command=self._enable_all
+        )
+        self.enable_all_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.disable_all_btn = ttk.Button(
+            ctrl_frame, text="Disable All", command=self._disable_all
+        )
+        self.disable_all_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        ttk.Separator(ctrl_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8, pady=2
+        )
+
+        self.apply_selected_btn = ttk.Button(
+            ctrl_frame,
+            text="Apply Selected",
+            command=self._apply_selected,
+            state=tk.DISABLED,
+        )
+        self.apply_selected_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.select_improved_btn = ttk.Button(
+            ctrl_frame,
+            text="Select All Improved",
+            command=self._select_all_improved,
+            state=tk.DISABLED,
+        )
+        self.select_improved_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.deselect_all_btn = ttk.Button(
+            ctrl_frame,
+            text="Deselect All",
+            command=self._deselect_all,
+            state=tk.DISABLED,
+        )
+        self.deselect_all_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Progress summary
+        self.progress_label = ttk.Label(ctrl_frame, text="")
+        self.progress_label.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # --- Table ---
+        table_frame = ttk.Frame(self.win, padding="8 4 8 4")
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = (
+            "enable",
+            "apply",
+            "country",
+            "code",
+            "cities",
+            "status",
+            "mae_before",
+            "mae_after",
+            "improvement",
+            "duration",
+        )
+        self.tree = ttk.Treeview(
+            table_frame, columns=columns, show="headings", selectmode="browse"
+        )
+
+        col_config: List[
+            tuple[
+                str,
+                str,
+                int,
+                Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
+            ]
+        ] = [
+            ("enable", "Run", 45, tk.CENTER),
+            ("apply", "Apply", 50, tk.CENTER),
+            ("country", "Country", 140, tk.W),
+            ("code", "Code", 50, tk.CENTER),
+            ("cities", "Ref Cities", 70, tk.CENTER),
+            ("status", "Status", 120, tk.W),
+            ("mae_before", "MAE Before", 90, tk.CENTER),
+            ("mae_after", "MAE After", 90, tk.CENTER),
+            ("improvement", "Change", 100, tk.CENTER),
+            ("duration", "Time", 70, tk.CENTER),
+        ]
+        for col_id, heading, width, anchor in col_config:
+            self.tree.heading(col_id, text=heading)
+            self.tree.column(col_id, width=width, anchor=anchor, minwidth=40)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(
+            table_frame, orient=tk.VERTICAL, command=self.tree.yview
+        )
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind click to toggle apply checkbox
+        self.tree.bind("<Button-1>", self._on_tree_click)
+
+        # --- Details panel ---
+        details_frame = ttk.LabelFrame(self.win, text="Details", padding="8 4 8 4")
+        details_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        self.details_text = tk.Text(
+            details_frame,
+            height=6,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            font=("Consolas", 9),
+        )
+        self.details_text.pack(fill=tk.X)
+
+        self.tree.bind("<<TreeviewSelect>>", self._on_row_select)
+
+    def _discover_countries(self):
+        """Find all countries with reference data and matching cities."""
+        self.countries = {}  # code -> { 'name': ..., 'ref_files': [(path, loc), ...] }
+
+        # Build country code -> name mapping
+        code_to_name = {}
+        csv_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "resources",
+            "country_codes.csv",
+        )
+        if os.path.exists(csv_path):
+            import csv
+
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                next(reader, None)  # skip header
+                for row in reader:
+                    if len(row) >= 2:
+                        code_to_name[row[1].strip()] = row[0].strip()
+
+        # Normalize name helper
+        def _norm(name):
+            return name.replace(" ", "_").replace(",", "").lower()
+
+        # Build location lookup per country
+        country_locs = {}  # code -> {norm_name: loc_data}
+        for loc in self.app.locations_data:
+            cc = loc.get("country_code", "")
+            if cc:
+                if cc not in country_locs:
+                    country_locs[cc] = {}
+                country_locs[cc][_norm(loc["name"])] = loc
+
+        # Scan reference directories
+        ref_base = os.path.normpath("reference")
+        if not os.path.isdir(ref_base):
+            return
+
+        for cc_dir in sorted(os.listdir(ref_base)):
+            cc_path = os.path.join(ref_base, cc_dir)
+            if not os.path.isdir(cc_path):
+                continue
+            cc = cc_dir.upper()
+            try:
+                ref_files_raw = [f for f in os.listdir(cc_path) if f.endswith(".txt")]
+            except OSError:
+                continue
+            if not ref_files_raw:
+                continue
+
+            locs_for_cc = country_locs.get(cc, {})
+            ref_files_matched = []
+            for rf in sorted(ref_files_raw):
+                norm = rf.replace(".txt", "")
+                loc_d = locs_for_cc.get(norm)
+                if loc_d is not None:
+                    ref_files_matched.append((os.path.join(cc_path, rf), loc_d))
+
+            if ref_files_matched:
+                self.countries[cc] = {
+                    "name": code_to_name.get(cc, cc),
+                    "ref_files": ref_files_matched,
+                }
+
+        # Track enable and apply checkboxes
+        self.enable_vars = {}  # country_code -> bool
+        self.apply_vars = {}  # country_code -> bool
+
+    def _populate_table(self):
+        for cc, info in self.countries.items():
+            self.enable_vars[cc] = True  # Default: all enabled
+            self.apply_vars[cc] = False
+            self.tree.insert(
+                "",
+                tk.END,
+                iid=cc,
+                values=(
+                    "[X]",
+                    "[ ]",
+                    info["name"],
+                    cc,
+                    len(info["ref_files"]),
+                    self.STATUS_PENDING,
+                    "",
+                    "",
+                    "",
+                    "",
+                ),
+            )
+        self.progress_label.config(
+            text=f"{len(self.countries)} countries with reference data"
+        )
+
+    def _on_tree_click(self, event):
+        """Toggle enable or apply checkbox when clicking those columns."""
+        region = self.tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        col = self.tree.identify_column(event.x)
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return
+
+        vals = list(self.tree.item(row_id, "values"))
+
+        if col == "#1":  # "enable" column
+            # Can't toggle if optimization is running or already completed
+            if self.is_running or row_id in self.country_results:
+                return
+            self.enable_vars[row_id] = not self.enable_vars.get(row_id, False)
+            check_str = "[X]" if self.enable_vars[row_id] else "[ ]"
+            vals[0] = check_str
+            self.tree.item(row_id, values=vals)
+
+        elif col == "#2":  # "apply" column
+            # Only allow toggling for improved results
+            if row_id not in self.country_results:
+                return
+            payload = self.country_results[row_id]
+            if not payload.get("improved", False):
+                return
+            self.apply_vars[row_id] = not self.apply_vars.get(row_id, False)
+            check_str = "[X]" if self.apply_vars[row_id] else "[ ]"
+            vals[1] = check_str
+            self.tree.item(row_id, values=vals)
+
+    def _on_row_select(self, _event):
+        """Show details for the selected country."""
+        sel = self.tree.selection()
+        if not sel:
+            return
+        cc = sel[0]
+        self.details_text.config(state=tk.NORMAL)
+        self.details_text.delete("1.0", tk.END)
+
+        if cc in self.country_results:
+            p = self.country_results[cc]
+            city_results = p.get("city_results", {})
+            lines = [
+                f"Country: {self.countries[cc]['name']} ({cc})",
+                f"Reference cities optimized: {p.get('n_reference_cities', len(city_results))}",
+                "",
+                f"MAE:  {p['baseline_mae']:.2f} → {p['after_mae']:.2f} min  "
+                f"({'%.1f%% better' % p['improvement_pct'] if p['improved'] else 'no improvement'})",
+                f"RMSE: {p['baseline_rmse']:.2f} → {p['after_rmse']:.2f} min",
+                "",
+                "Per-prayer MAE (before → after):",
+            ]
+            for prayer in PRAYER_NAMES:
+                b = p["baseline_per_prayer_mae"].get(prayer, float("inf"))
+                a = p["after_per_prayer_mae"].get(prayer, float("inf"))
+                lines.append(f"  {prayer:10s}: {b:.2f} → {a:.2f} min")
+            if city_results:
+                sample_name = sorted(city_results.keys())[0]
+                sample_opt = city_results[sample_name]["opt_result"]
+                lines.extend(
+                    [
+                        "",
+                        f"Sample city: {sample_name}",
+                        f"Fajr angle: {sample_opt.fajr_angle}  |  Isha angle: {sample_opt.isha_angle}",
+                        f"Lat: {sample_opt.latitude:.5f}  Lon: {sample_opt.longitude:.5f}",
+                    ]
+                )
+            self.details_text.insert(tk.END, "\n".join(lines))
+        else:
+            info = self.countries.get(cc, {})
+            city_names = [rf[1]["name"] for rf in info.get("ref_files", [])]
+            self.details_text.insert(
+                tk.END,
+                f"Country: {info.get('name', cc)} ({cc})\n"
+                f"Reference cities: {', '.join(city_names)}\n"
+                f"Status: Pending",
+            )
+        self.details_text.config(state=tk.DISABLED)
+
+    def _start_all(self):
+        """Start sequential optimization for all enabled countries."""
+        self.stop_event.clear()
+        self.is_running = True
+        self.start_btn.config(state=tk.DISABLED)
+        self.stop_btn.config(state=tk.NORMAL)
+        self.apply_selected_btn.config(state=tk.DISABLED)
+        self.select_improved_btn.config(state=tk.DISABLED)
+        self.deselect_all_btn.config(state=tk.DISABLED)
+        self.enable_all_btn.config(state=tk.DISABLED)
+        self.disable_all_btn.config(state=tk.DISABLED)
+
+        # Get use_dst flag
+        use_dst = False
+        try:
+            use_dst = self.app.dst_var.get()
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+            pass
+        self.use_dst = use_dst
+        # Build queue of enabled countries (allow re-runs)
+        self.pending_queue = [
+            cc for cc in self.countries if self.enable_vars.get(cc, False)
+        ]
+        self.total_to_run = len(self.pending_queue)
+        self.completed_count = 0
+
+        # Clear prior results for queued countries so metrics reflect latest settings
+        for cc in self.pending_queue:
+            if cc in self.country_results:
+                self.country_results.pop(cc, None)
+                self._update_row(
+                    cc,
+                    status=self.STATUS_PENDING,
+                    mae_before="",
+                    mae_after="",
+                    improvement="",
+                    duration="",
+                )
+
+        if not self.pending_queue:
+            messagebox.showinfo(
+                "No Countries Enabled",
+                "No enabled countries to optimize. Enable at least one country by clicking the 'Run' column.",
+                parent=self.win,
+            )
+            self._on_all_done()
+            return
+
+        # Start first country
+        self._start_next_country()
+
+    def _stop_all(self):
+        """Signal all running threads to stop."""
+        self.stop_event.set()
+        self.stop_btn.config(state=tk.DISABLED)
+        self.progress_label.config(text="Stopping...")
+
+    def _start_next_country(self):
+        """Start optimization for the next country in the queue."""
+        if not self.pending_queue:
+            return
+
+        cc = self.pending_queue.pop(0)
+        info = self.countries[cc]
+        self._update_row(cc, status=self.STATUS_RUNNING)
+
+        self.current_thread = threading.Thread(
+            target=_run_country_optimization,
+            args=(
+                cc,
+                info["ref_files"],
+                self.app.tf,
+                self.use_dst,
+                self.result_queue,
+                self.stop_event,
+                None,
+            ),
+            daemon=True,
+        )
+        self.current_thread.start()
+
+    def _poll_queue(self):
+        """Poll the result queue and update UI. Called via root.after()."""
+        try:
+            while True:
+                cc, msg_type, payload = self.result_queue.get_nowait()
+                self._handle_message(cc, msg_type, payload)
+        except queue.Empty:
+            pass
+
+        # Check if current thread is done
+        if self.is_running and self.current_thread:
+            if not self.current_thread.is_alive():
+                if self.pending_queue and not self.stop_event.is_set():
+                    # Start next country
+                    self._start_next_country()
+                else:
+                    # All done
+                    self._on_all_done()
+
+        # Schedule next poll if window still exists
+        try:
+            self.win.after(150, self._poll_queue)
+        except tk.TclError:
+            pass
+
+    def _handle_message(self, cc, msg_type, payload):
+        if msg_type == "progress":
+            self._update_row(cc, status=f"Running: {payload}")
+        elif msg_type == "city_done":
+            city = payload.get("city", "")
+            idx = payload.get("index", 0)
+            total = payload.get("total", 0)
+            model_tag = (
+                "with residual" if payload.get("has_residual") else "no residual"
+            )
+            duration = float(payload.get("duration_seconds") or 0.0)
+            self._update_row(
+                cc,
+                status=(
+                    f"Running: {idx}/{total} {city} ({model_tag}, {duration:.1f}s)"
+                ),
+            )
+        elif msg_type == "done":
+            self.country_results[cc] = payload
+            self.completed_count += 1
+            if payload["improved"]:
+                self._update_row(
+                    cc,
+                    status=self.STATUS_DONE_IMPROVED,
+                    mae_before=f"{payload['baseline_mae']:.2f}",
+                    mae_after=f"{payload['after_mae']:.2f}",
+                    improvement=f"-{payload['improvement_pct']:.1f}%",
+                    duration=f"{payload.get('duration_seconds', 0.0):.0f}s",
+                )
+                # Auto-check improved results
+                self.apply_vars[cc] = True
+                vals = list(self.tree.item(cc, "values"))
+                vals[1] = "[X]"
+                self.tree.item(cc, values=vals)
+            else:
+                self._update_row(
+                    cc,
+                    status=self.STATUS_DONE_NO_IMPROVE,
+                    mae_before=f"{payload['baseline_mae']:.2f}",
+                    mae_after=f"{payload['after_mae']:.2f}",
+                    improvement="None",
+                    duration=f"{payload.get('duration_seconds', 0.0):.0f}s",
+                )
+            self._update_progress()
+        elif msg_type == "error":
+            self.completed_count += 1
+            self._update_row(cc, status=f"Error: {str(payload)[:50]}")
+            self._update_progress()
+
+    def _update_row(self, cc, **kwargs):
+        """Update specific columns of a tree row."""
+        try:
+            vals = list(self.tree.item(cc, "values"))
+            col_map = {
+                "enable": 0,
+                "apply": 1,
+                "status": 5,
+                "mae_before": 6,
+                "mae_after": 7,
+                "improvement": 8,
+                "duration": 9,
+            }
+            for key, val in kwargs.items():
+                if key in col_map:
+                    vals[col_map[key]] = val
+            self.tree.item(cc, values=vals)
+            # Auto-scroll to show the row being updated
+            self.tree.see(cc)
+        except tk.TclError:
+            pass
+
+    def _update_progress(self):
+        total = self.total_to_run
+        done = self.completed_count
+        improved = sum(
+            1 for p in self.country_results.values() if p.get("improved", False)
+        )
+        self.progress_label.config(text=f"{done}/{total} done  |  {improved} improved")
+
+    def _on_all_done(self):
+        """Called when all optimization threads have finished."""
+        self.is_running = False
+        self.start_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        self.enable_all_btn.config(state=tk.NORMAL)
+        self.disable_all_btn.config(state=tk.NORMAL)
+        self.current_thread = None
+
+        has_improved = any(
+            p.get("improved", False) for p in self.country_results.values()
+        )
+        if has_improved:
+            self.apply_selected_btn.config(state=tk.NORMAL)
+            self.select_improved_btn.config(state=tk.NORMAL)
+            self.deselect_all_btn.config(state=tk.NORMAL)
+
+        total = len(self.country_results)
+        improved = sum(
+            1 for p in self.country_results.values() if p.get("improved", False)
+        )
+        self.progress_label.config(
+            text=f"Complete: {total} countries  |  {improved} improved"
+        )
+
+    def _enable_all(self):
+        """Enable all countries for optimization."""
+        if self.is_running:
+            return
+        for cc in self.countries:
+            if cc not in self.country_results:  # Only unprocessed countries
+                self.enable_vars[cc] = True
+                vals = list(self.tree.item(cc, "values"))
+                vals[0] = "[X]"
+                self.tree.item(cc, values=vals)
+
+    def _disable_all(self):
+        """Disable all countries for optimization."""
+        if self.is_running:
+            return
+        for cc in self.countries:
+            if cc not in self.country_results:  # Only unprocessed countries
+                self.enable_vars[cc] = False
+                vals = list(self.tree.item(cc, "values"))
+                vals[0] = "[ ]"
+                self.tree.item(cc, values=vals)
+
+    def _select_all_improved(self):
+        for cc, payload in self.country_results.items():
+            if payload.get("improved", False):
+                self.apply_vars[cc] = True
+                vals = list(self.tree.item(cc, "values"))
+                vals[1] = "[X]"  # Apply column is now index 1
+                self.tree.item(cc, values=vals)
+
+    def _deselect_all(self):
+        for cc in self.apply_vars:
+            self.apply_vars[cc] = False
+            try:
+                vals = list(self.tree.item(cc, "values"))
+                vals[1] = "[ ]"
+                self.tree.item(cc, values=vals)
+            except tk.TclError:
+                pass
+
+    def _apply_selected(self):
+        """Apply optimization results for all selected (checked) countries."""
+        rewrite_location_file = getattr(self.app, "rewrite_location_file", None)
+        if not callable(rewrite_location_file):
+            messagebox.showerror(
+                "Apply Failed",
+                "No rewrite hook is available on the host app instance.",
+                parent=self.win,
+            )
+            return
+
+        to_apply = [
+            cc
+            for cc, checked in self.apply_vars.items()
+            if checked
+            and cc in self.country_results
+            and self.country_results[cc].get("improved", False)
+        ]
+
+        if not to_apply:
+            messagebox.showinfo(
+                "Nothing Selected",
+                "No countries with improvements are selected.",
+                parent=self.win,
+            )
+            return
+
+        confirm = messagebox.askyesno(
+            "Confirm Apply",
+            f"Apply optimized settings to {len(to_apply)} countries?\n\n"
+            + "\n".join(f"  {self.countries[cc]['name']} ({cc})" for cc in to_apply),
+            parent=self.win,
+        )
+        if not confirm:
+            return
+
+        applied_count = 0
+        updated_city_ids = []
+        for cc in to_apply:
+            payload = self.country_results[cc]
+            city_results = payload.get("city_results", {})
+
+            reference_result_by_name = {
+                name: data.get("opt_result") for name, data in city_results.items()
+            }
+            has_any_stage1_results = any(
+                _is_stage1_output(opt)
+                for opt in reference_result_by_name.values()
+                if opt is not None
+            )
+            has_any_full_results = any(
+                not _is_stage1_output(opt)
+                for opt in reference_result_by_name.values()
+                if opt is not None
+            )
+            country_stage1_only = has_any_stage1_results and not has_any_full_results
+            reference_cities_for_angle_transfer = []
+            for name, opt in reference_result_by_name.items():
+                if not opt:
+                    continue
+                reference_cities_for_angle_transfer.append(
+                    {
+                        "name": name,
+                        "latitude": float(opt.latitude),
+                        "longitude": float(opt.longitude),
+                        "fajr_angle": float(opt.fajr_angle),
+                        "isha_angle": float(opt.isha_angle),
+                    }
+                )
+            reference_cities_with_models = []
+            for name, opt in reference_result_by_name.items():
+                if opt and opt.residual_corrections:
+                    reference_cities_with_models.append(
+                        {
+                            "name": name,
+                            "latitude": float(opt.latitude),
+                            "longitude": float(opt.longitude),
+                            "residual_corrections": opt.residual_corrections,
+                        }
+                    )
+
+            for i, loc in enumerate(self.app.locations_data):
+                if loc.get("country_code") != cc:
+                    continue
+
+                city_opt = reference_result_by_name.get(loc.get("name"))
+                if city_opt is not None:
+                    is_stage1 = _is_stage1_output(city_opt)
+                    _apply_optimization_result_to_location(
+                        self.app.locations_data[i],
+                        city_opt,
+                        stage1_only=is_stage1,
+                        apply_coordinates=not is_stage1,
+                    )
+                else:
+                    loc_lat = float(
+                        loc.get("optimized_lat") or loc.get("latitude") or 0.0
+                    )
+                    loc_lon = float(
+                        loc.get("optimized_lon") or loc.get("longitude") or 0.0
+                    )
+
+                    closest_for_angles = _find_closest_city_by_distance(
+                        loc_lat,
+                        loc_lon,
+                        reference_cities_for_angle_transfer,
+                    )
+                    if closest_for_angles:
+                        if country_stage1_only:
+                            _reset_stage1_defaults(self.app.locations_data[i])
+                        self.app.locations_data[i]["fajr_angle"] = closest_for_angles[
+                            "fajr_angle"
+                        ]
+                        self.app.locations_data[i]["isha_angle"] = closest_for_angles[
+                            "isha_angle"
+                        ]
+                        self.app.locations_data[i]["is_optimized"] = 1
+
+                    if not country_stage1_only:
+                        closest_ref = _find_closest_city_by_distance(
+                            loc_lat,
+                            loc_lon,
+                            reference_cities_with_models,
+                        )
+                        if closest_ref and _matches_conservative_rules(
+                            closest_ref["latitude"],
+                            closest_ref["longitude"],
+                            loc_lat,
+                            loc_lon,
+                        ):
+                            self.app.locations_data[i]["residual_corrections"] = (
+                                closest_ref["residual_corrections"]
+                            )
+                        else:
+                            self.app.locations_data[i]["residual_corrections"] = ""
+
+                updated_city_ids.append(self.app.locations_data[i].get("id"))
+                applied_count += 1
+
+            # Update row status
+            self._update_row(cc, status=self.STATUS_APPLIED)
+            self.apply_vars[cc] = False
+            vals = list(self.tree.item(cc, "values"))
+            vals[1] = "[X]"  # Keep apply column checked to show it was applied
+            self.tree.item(cc, values=vals)
+
+        try:
+            rewrite_location_file(self.app)
+        except TypeError:
+            rewrite_location_file()
+        if hasattr(self.app, "rebuild_city_rmse_for_ids"):
+            try:
+                self.app.rebuild_city_rmse_for_ids(updated_city_ids)
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        if hasattr(self.app, "filter_list"):
+            try:
+                self.app.filter_list()
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        try:
+            self.app.on_city_select(None)
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+            pass
+
+        messagebox.showinfo(
+            "Applied",
+            f"Applied optimizations to {applied_count} cities across {len(to_apply)} countries.",
+            parent=self.win,
+        )
+
+    def _on_close(self):
+        """Handle window close — stop any running threads first."""
+        if self.is_running:
+            self.stop_event.set()
+            # Give threads a moment to notice
+            self.win.after(500, self._force_close)
+        else:
+            self.win.destroy()
+
+    def _force_close(self):
+        try:
+            self.win.destroy()
+        except tk.TclError:
+            pass
+
+
+def open_batch_optimization_dashboard(app):
+    """Entry point to open the batch dashboard from the main GUI."""
+    BatchOptimizationDashboard(app)
+
+
+# =============================================================================
+# GUI Wrapper — Entry point called from PrayerApp
+# =============================================================================
+
+
+def optimize_parameters_for_city(
+    self,
+    ref_file,
+    max_cpu_workers=None,
+):
+    """
+    Main entry point called from the GUI. Loads reference data,
+    runs the optimization engine, and displays results.
+    """
+    _ = max_cpu_workers
+    rewrite_location_file = getattr(self, "rewrite_location_file", None)
+    if not callable(rewrite_location_file):
+        messagebox.showerror(
+            "Optimization Error",
+            "No rewrite hook is available on this app instance.",
+        )
+        return
+
+    selected_data = self.get_selected_location_data()
+    if not selected_data:
+        messagebox.showwarning("No Selection", "Please select a city to optimize.")
+        return
+    optimization_started_at = datetime.datetime.now()
+
+    def _progress_log(msg):
+        text = str(msg or "").strip()
+        if not text:
+            return
+        lower = text.lower()
+        if not any(
+            token in lower
+            for token in (
+                "phase ",
+                "stage ",
+                "accepted",
+                "rejected",
+                "summary",
+                "final",
+                "switch",
+            )
+        ):
+            return
+        print(f"[2/3] {text}")
+
+    print(
+        f"--- Optimization started for {selected_data['name']} at {datetime.datetime.now()} ---"
+    )
+    if not ref_file or not os.path.exists(ref_file):
+        messagebox.showerror(
+            "No Reference Data",
+            f"No reference data found at '{ref_file}'. Optimization requires reference data.",
+        )
+        return
+
+    # --- Load reference data ---
+    all_reference_times = {}
+    available_dates = []
+    current_year = datetime.date.today().year
+    try:
+        with open(ref_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            if not lines:
+                messagebox.showerror(
+                    "No Reference Data", f"Reference file '{ref_file}' is empty."
+                )
+                return
+            for line in lines:
+                parts = line.strip().split("\t")
+                if len(parts) != 7:
+                    continue
+                date_str, fajr, sunrise, dhuhr, asr, maghrib, isha = parts
+                try:
+                    for fmt in ("%d-%b", "%d/%m", "%m/%d", "%Y-%m-%d", "%d-%m-%Y"):
+                        try:
+                            date_obj_tmp = datetime.datetime.strptime(date_str, fmt)
+                            year_to_use = (
+                                date_obj_tmp.year
+                                if date_obj_tmp.year != 1900
+                                else current_year
+                            )
+                            date_obj = datetime.date(
+                                year_to_use, date_obj_tmp.month, date_obj_tmp.day
+                            )
+                            break
+                        except ValueError:
+                            pass
+                    else:
+                        print(f"Skipping line with unparsed date: {line.strip()}")
+                        continue
+
+                    # Basic time format validation
+                    datetime.datetime.strptime(
+                        fajr.split(":")[0] + ":" + fajr.split(":")[1], "%H:%M"
+                    )
+                    datetime.datetime.strptime(
+                        isha.split(":")[0] + ":" + isha.split(":")[1], "%H:%M"
+                    )
+
+                    all_reference_times[date_obj] = {
+                        "fajr": fajr,
+                        "shurooq": sunrise,
+                        "dhuhr": dhuhr,
+                        "asr": asr,
+                        "maghrib": maghrib,
+                        "isha": isha,
+                    }
+                    available_dates.append(date_obj)
+                except ValueError as ve:
+                    print(f"Skipping line with invalid date/time: '{date_str}': {ve}")
+                except (TypeError, KeyError, RuntimeError, OSError) as date_e:
+                    print(f"Skipping line: {line.strip()} -> {date_e}")
+    except (TypeError, KeyError, RuntimeError, OSError) as e:
+        messagebox.showerror(
+            "Error", f"Failed to read reference file '{ref_file}': {e}"
+        )
+        return
+
+    if not all_reference_times:
+        messagebox.showerror(
+            "No Reference Data",
+            f"Reference file '{ref_file}' did not contain valid data.",
+        )
+        return
+
+    # --- Determine timezone name ---
+    print("[1/3] Preparing optimization inputs and baseline...")
+    original_lat = selected_data["latitude"]
+    original_lon = selected_data["longitude"]
+    tz_name = None
+    if self.tf and self.dst_var.get():
+        try:
+            tz_name = self.tf.timezone_at(lng=original_lon, lat=original_lat)
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError) as tz_e:
+            print(f"Warning: Could not determine timezone name: {tz_e}")
+
+    selected_timezone = selected_data["timezone"]
+    sel_elevation = float(selected_data.get("elevation", 0) or 0)
+    baseline_location_data = dict(selected_data)
+    optimization_location_data = _reset_stage1_defaults(dict(selected_data))
+
+    # --- Discover auxiliary cities in same country (for residual model only) ---
+    auxiliary_cities = []
+    country_code = selected_data.get("country_code", "")
+    ref_dir = os.path.normpath(os.path.join("reference", country_code))
+    selected_ref_basename = os.path.basename(ref_file)
+
+    if country_code and os.path.isdir(ref_dir):
+
+        def _normalize_name(name):
+            return name.replace(" ", "_").replace(",", "").lower()
+
+        country_locations = {}
+        for loc in self.locations_data:
+            if loc.get("country_code") == country_code:
+                country_locations[_normalize_name(loc["name"])] = loc
+
+        try:
+            ref_files_in_dir = [
+                f
+                for f in os.listdir(ref_dir)
+                if f.endswith(".txt") and f != selected_ref_basename
+            ]
+        except OSError:
+            ref_files_in_dir = []
+
+        for ref_filename in ref_files_in_dir:
+            norm_name = ref_filename.replace(".txt", "")
+            loc_data = country_locations.get(norm_name)
+            if loc_data is None:
+                continue
+
+            aux_ref_path = os.path.join(ref_dir, ref_filename)
+            aux_ref_times, aux_dates = _load_reference_file(aux_ref_path)
+            if not aux_ref_times or not aux_dates:
+                continue
+
+            aux_tz_name = None
+            aux_lat = float(loc_data.get("latitude", 0))
+            aux_lon = float(loc_data.get("longitude", 0))
+            aux_tz = loc_data.get("timezone", selected_timezone) or selected_timezone
+            if self.tf and self.dst_var.get():
+                try:
+                    aux_tz_name = self.tf.timezone_at(lng=aux_lon, lat=aux_lat)
+                except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                    pass
+
+            auxiliary_cities.append(
+                {
+                    "name": loc_data["name"],
+                    "latitude": aux_lat,
+                    "longitude": aux_lon,
+                    "elevation": float(loc_data.get("elevation", 0) or 0),
+                    "timezone": aux_tz,
+                    "tz_name": aux_tz_name,
+                    "reference_times": aux_ref_times,
+                    "available_dates": aux_dates,
+                    "temp": float(loc_data.get("temp", 10.0) or 10.0),
+                    "pressure": float(loc_data.get("pressure", 1010.0) or 1010.0),
+                    "isha_minutes": float(loc_data.get("isha_minutes", 0) or 0),
+                }
+            )
+
+    conservative_auxiliary_cities = _filter_cities_by_conservative_rules(
+        original_lat,
+        original_lon,
+        auxiliary_cities,
+    )
+    if auxiliary_cities:
+        print(
+            f"Using {len(conservative_auxiliary_cities)}/{len(auxiliary_cities)} "
+            "auxiliary cities for residual validation"
+        )
+
+    # --- Compute baseline error with current parameters ---
+    print("[1/3] Computing baseline error with current parameters...")
+    baseline_params = np.array(
+        [
+            float(baseline_location_data.get("fajr_angle", 18.0) or 18.0),
+            float(baseline_location_data.get("isha_angle", 17.0) or 17.0),
+            float(
+                baseline_location_data.get("optimized_lat")
+                or baseline_location_data["latitude"]
+            ),
+            float(
+                baseline_location_data.get("optimized_lon")
+                or baseline_location_data["longitude"]
+            ),
+            float(baseline_location_data.get("temp", 10.0) or 10.0),
+            float(baseline_location_data.get("pressure", 1010.0) or 1010.0),
+        ],
+        dtype=float,
+    )
+
+    baseline_offsets = {
+        "fajr_offset": float(baseline_location_data.get("fajr_offset", 0.0) or 0.0),
+        "shurooq_offset": float(
+            baseline_location_data.get("shurooq_offset", 0.0) or 0.0
+        ),
+        "dhuhr_offset": float(baseline_location_data.get("dhuhr_offset", 0.0) or 0.0),
+        "asr_offset": float(baseline_location_data.get("asr_offset", 0.0) or 0.0),
+        "maghrib_offset": float(
+            baseline_location_data.get("maghrib_offset", 0.0) or 0.0
+        ),
+        "isha_offset": float(baseline_location_data.get("isha_offset", 0.0) or 0.0),
+    }
+
+    (
+        baseline_rmse,
+        baseline_mae,
+        _,
+        baseline_per_prayer_mae,
+        _,
+        _,
+    ) = _compute_detailed_errors(
+        baseline_params,
+        available_dates=available_dates,
+        reference_times=all_reference_times,
+        elevation=sel_elevation,
+        timezone=selected_timezone,
+        tz_name=tz_name,
+        isha_minutes=float(baseline_location_data.get("isha_minutes", 0) or 0),
+        offsets=baseline_offsets,
+        residual_model=_load_residual_model_from_json(
+            baseline_location_data.get("residual_corrections", "")
+        ),
+        settings_source=baseline_location_data,
+        clock_offsets_json=baseline_location_data.get("clock_offsets", "") or "",
+    )
+
+    print(f"[1/3] Baseline MAE: {baseline_mae:.2f} min, RMSE: {baseline_rmse:.2f} min")
+
+    # --- Run the optimization engine ---
+    print(
+        "[2/3] Running multistage optimizer "
+        f"(dates={len(available_dates)}, tz={tz_name or selected_timezone})..."
+    )
+
+    opt_result = run_multistage_optimization(
+        location_data=optimization_location_data,
+        reference_times=all_reference_times,
+        available_dates=available_dates,
+        tz_name=tz_name,
+        progress_callback=_progress_log,
+    )
+
+    after_params = np.array(
+        [
+            float(opt_result.fajr_angle),
+            float(opt_result.isha_angle),
+            float(opt_result.latitude),
+            float(opt_result.longitude),
+            float(opt_result.temp),
+            float(opt_result.pressure),
+        ],
+        dtype=float,
+    )
+    after_elevation = float(getattr(opt_result, "elevation", sel_elevation) or 0.0)
+    after_offsets = dict(opt_result.offsets) if opt_result.offsets else {}
+
+    (
+        after_rmse,
+        after_mae,
+        _,
+        after_per_prayer_mae,
+        _,
+        _,
+    ) = _compute_detailed_errors(
+        after_params,
+        available_dates=available_dates,
+        reference_times=all_reference_times,
+        elevation=after_elevation,
+        timezone=selected_timezone,
+        tz_name=tz_name,
+        isha_minutes=float(baseline_location_data.get("isha_minutes", 0) or 0),
+        offsets=after_offsets,
+        residual_model=_load_residual_model_from_json(opt_result.residual_corrections),
+        settings_source=[baseline_location_data, opt_result],
+        clock_offsets_json=opt_result.clock_offsets or "",
+    )
+
+    # --- Check if optimization found improvement ---
+    if baseline_mae > 0 and baseline_mae != float("inf"):
+        improvement_pct = ((baseline_mae - after_mae) / baseline_mae) * 100
+    else:
+        improvement_pct = 0.0
+    print(
+        "Optimization accepted using multistage scoring criteria. "
+        f"MAE {baseline_mae:.2f}->{after_mae:.2f}, "
+        f"RMSE {baseline_rmse:.2f}->{after_rmse:.2f}."
+    )
+
+    print(
+        "[3/3] Optimization complete. "
+        f"MAE {baseline_mae:.2f}→{after_mae:.2f}, "
+        f"RMSE {baseline_rmse:.2f}→{after_rmse:.2f}."
+    )
+    phase_timings = getattr(opt_result, "phase_timings", None)
+    if isinstance(phase_timings, dict) and phase_timings:
+        print("[3/3] Detailed step timings (seconds):")
+        for key in sorted(phase_timings.keys()):
+            value = phase_timings.get(key)
+            if value is None:
+                continue
+            try:
+                value_f = float(value)
+            except (ValueError, TypeError):
+                continue
+            print(f"  - {key}: {value_f:.4f}")
+
+        ranked = [
+            (k, float(v))
+            for k, v in phase_timings.items()
+            if k != "total" and not k.endswith(".total") and isinstance(v, (int, float))
+        ]
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        if ranked:
+            print("[3/3] Slowest steps:")
+            for step_name, secs in ranked[:5]:
+                print(f"  - {step_name}: {secs:.4f}")
+
+    # --- Build results message with before/after comparison ---
+    msg = (
+        f"Optimization complete for {selected_data['name']}!\n\n"
+        f"--- IMPROVEMENT SUMMARY ---\n"
+        f"Before: MAE = {baseline_mae:.2f} min, RMSE = {baseline_rmse:.2f} min\n"
+        f"After:  MAE = {after_mae:.2f} min, RMSE = {after_rmse:.2f} min\n"
+        f"MAE Improvement: {improvement_pct:.1f}% better\n\n"
+        f"--- Optimized Parameters ---\n"
+        f"Fajr Angle: {baseline_params[0]:.1f}° → {opt_result.fajr_angle}\n"
+        f"Isha Angle: {baseline_params[1]:.1f}° → {opt_result.isha_angle}\n"
+        f"Temp: {baseline_params[4]:.1f}°C → {opt_result.temp}°C\n"
+        f"Pressure: {baseline_params[5]:.0f} mb → {opt_result.pressure} mb\n\n"
+        f"--- Offsets (minutes) ---\n"
+        f"  Fajr: {baseline_offsets['fajr_offset']:.1f} → {opt_result.offsets.get('fajr_offset', 0.0):.1f}\n"
+        f"  Shurooq: {baseline_offsets['shurooq_offset']:.1f} → {opt_result.offsets.get('shurooq_offset', 0.0):.1f}\n"
+        f"  Dhuhr: {baseline_offsets['dhuhr_offset']:.1f} → {opt_result.offsets.get('dhuhr_offset', 0.0):.1f}\n"
+        f"  Asr: {baseline_offsets['asr_offset']:.1f} → {opt_result.offsets.get('asr_offset', 0.0):.1f}\n"
+        f"  Maghrib: {baseline_offsets['maghrib_offset']:.1f} → {opt_result.offsets.get('maghrib_offset', 0.0):.1f}\n"
+        f"  Isha: {baseline_offsets['isha_offset']:.1f} → {opt_result.offsets.get('isha_offset', 0.0):.1f}\n\n"
+        f"--- Coordinates ---\n"
+        f"Original: {original_lat:.5f}, {original_lon:.5f}\n"
+        f"Before: {baseline_params[2]:.5f}, {baseline_params[3]:.5f}\n"
+        f"After: {opt_result.latitude}, {opt_result.longitude}\n"
+        f"Distance moved: {opt_result.distance_moved_km:.3f} km\n\n"
+        f"--- Per-Prayer Error (MAE: Before → After) ---\n"
+        + "\n".join(
+            f"  {p}: {baseline_per_prayer_mae[p]:.2f} → {after_per_prayer_mae[p]:.2f} min"
+            for p in PRAYER_NAMES
+        )
+        + f"\n\n({opt_result.n_function_evals} evals in {opt_result.duration_seconds:.1f}s)"
+        + (
+            f"\n\n--- Adaptive Detection ---\n{opt_result.adaptive_notes}"
+            if opt_result.adaptive_notes
+            else ""
+        )
+    )
+
+    print(f"--- Showing results dialog at {datetime.datetime.now()} ---")
+    try:
+        parent_window = self.root
+    except AttributeError:
+        print("Error: self.root not found. Using None as parent.")
+        parent_window = None
+
+    result_action = ask_optimization_result_dialog(
+        parent_window, "Optimization Complete", msg
+    )
+    print(
+        f"--- Dialog closed, result: {result_action} at {datetime.datetime.now()} ---"
+    )
+    total_runtime = (datetime.datetime.now() - optimization_started_at).total_seconds()
+    print(f"Total runtime: {total_runtime:.1f}s")
+
+    # --- Apply results based on user choice ---
+    stage1_only_output = _is_stage1_output(opt_result)
+
+    if result_action == "city":
+        print("Applying changes to current city...")
+        updated_city_ids = []
+        for i, loc in enumerate(self.locations_data):
+            if loc["name"] == selected_data["name"]:
+                _apply_optimization_result_to_location(
+                    self.locations_data[i],
+                    opt_result,
+                    stage1_only=stage1_only_output,
+                    apply_coordinates=True,
+                )
+                updated_city_ids.append(self.locations_data[i].get("id"))
+                break
+        try:
+            rewrite_location_file(self)
+        except TypeError:
+            rewrite_location_file()
+        if hasattr(self, "rebuild_city_rmse_for_ids"):
+            try:
+                self.rebuild_city_rmse_for_ids(updated_city_ids)
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        if hasattr(self, "filter_list"):
+            try:
+                self.filter_list()
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        self.on_city_select(None)
+
+    elif result_action == "country":
+        print("Applying changes to whole country...")
+        current_country_code = selected_data.get("country_code")
+        if not current_country_code:
+            messagebox.showwarning(
+                "Cannot Apply to Country",
+                "Could not determine country code. Changes not applied.",
+            )
+            return
+        applied_count = 0
+        updated_city_ids = []
+        for i, loc in enumerate(self.locations_data):
+            if loc.get("country_code") == current_country_code:
+                _apply_optimization_result_to_location(
+                    self.locations_data[i],
+                    opt_result,
+                    stage1_only=stage1_only_output,
+                    apply_coordinates=False,
+                )
+                updated_city_ids.append(self.locations_data[i].get("id"))
+                applied_count += 1
+                # Only apply optimized coordinates to the selected city
+                if loc["name"] == selected_data["name"]:
+                    _apply_optimization_result_to_location(
+                        self.locations_data[i],
+                        opt_result,
+                        stage1_only=False,
+                        apply_coordinates=True,
+                    )
+        print(
+            f"Applied settings to {applied_count} cities with country code {current_country_code}."
+        )
+        try:
+            rewrite_location_file(self)
+        except TypeError:
+            rewrite_location_file()
+        if hasattr(self, "rebuild_city_rmse_for_ids"):
+            try:
+                self.rebuild_city_rmse_for_ids(updated_city_ids)
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        if hasattr(self, "filter_list"):
+            try:
+                self.filter_list()
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                pass
+        self.on_city_select(None)
+
+    elif result_action == "ignore" or result_action is None:
+        print("Ignoring optimization changes.")
+    else:
+        print(f"Warning: Unexpected dialog result '{result_action}'")

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-prayer-times"
+version = "1.0.0"
+description = "Open-source prayer times calculator and city parameter optimizer with a multi-stage calibration pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Kalimat Ltd"}]
+license = {text = "MIT"}
+dependencies = [
+  "geopy==2.4.1",
+  "numpy>=1.24.0",
+  "pyephem==9.99",
+  "pytz==2025.2",
+  "scipy>=1.11.0",
+  "timezonefinder==6.5.9",
+  "watchdog==6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+open-prayer-times = "src.app.presentation.cli:main"
+open-prayer-times-optimize = "src.app.presentation.optimizer_cli:main"
+open-prayer-times-gui = "src.app.presentation.gui_app:main"
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
