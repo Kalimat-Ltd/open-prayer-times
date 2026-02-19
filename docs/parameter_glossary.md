@@ -122,7 +122,7 @@ Operational principle:
 
 - prioritize closeness to trusted reference schedules
 - keep parameters within configured physical search limits
-- and treat optimized environment values as model-fit parameters when necessary
+- treat optimized environment values as model-fit parameters when necessary
 
 ## 6) Stable vs Unstable Days
 

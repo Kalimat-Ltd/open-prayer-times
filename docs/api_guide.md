@@ -50,7 +50,7 @@ Parameters:
 | `target_date` | `datetime.date` | The date to calculate for |
 | `loc_csv_path` | `Path` | Path to `loc.csv` |
 
-Returns: prayer times dict with keys like `fajr`, `shurooq`, `dhuhr`, `asr`, `maghrib`, `isha`.
+Returns: `PrayerCalculationResult` — a dataclass with a `.times` dict (keys: `fajr`, `shurooq`, `dhuhr`, `asr`, `maghrib`, `isha`), a `.method_used` dict, and an optional `.error` string.
 
 ## 2) Infrastructure-layer APIs
 
@@ -108,10 +108,10 @@ from pathlib import Path
 from src.app.application.optimization_use_case import optimize_city_from_reference
 
 result = optimize_city_from_reference(
-  city_name="Egypt, Cairo",
-  reference_file=Path("reference/EG/egypt_cairo.txt"),
+    city_name="Egypt, Cairo",
+    reference_file=Path("reference/EG/egypt_cairo.txt"),
     loc_csv_path=Path("loc.csv"),
-  timezone_offset_hours=2,
+    timezone_offset_hours=2,
 )
 
 print(result.mae_total, result.rmse_total)

@@ -151,4 +151,3 @@ Focused tests:
 - `tests/test_multistage_stage1_paris.py`
 - `tests/test_multistage_stage1_achim_geo.py`
 - `tests/test_multistage_stage1_asr_detection_kabul.py`
-- `tests/test_multistage_stage1_kabul_asr_madhab.py`
