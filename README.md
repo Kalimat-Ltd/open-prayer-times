@@ -9,7 +9,7 @@ It uses a multi-stage optimization pipeline to fit city parameters from referenc
 - **Prayer-time calculation** — astronomical engine (PyEphem) with angle-based and moonsighting modes, high-latitude handling, and environmental parameters.
 - **Multi-stage optimizer** — three-stage pipeline (astronomical core → high-latitude adaptation → correction layers) for reference-driven city calibration.
 - **GUI application** — tkinter desktop app for browsing cities, calculating prayer times, running single-city optimization, and batch country optimization.
-- **CLI tools** — command-line interfaces for day calculation and city optimization.
+- **CLI tools** — command-line interfaces for day calculation.
 - **Reference-driven workflows** — per-country datasets in `reference/` for validation and fitting.
 - **Automated test suite** — regression and integration tests for calculator, optimizer stages, and GUI-related flows.
 
@@ -87,7 +87,6 @@ src/app/
 reference/    # Per-country reference prayer-time files (tab-separated .txt)
 resources/    # Source datasets (country_codes.csv, worldcities.csv)
 data/         # Generated/processed datasets
-tools/        # Operational utility scripts (data ingestion, comparison)
 tests/        # Automated test suite (includes tests/fixtures/ baselines)
 docs/         # Architecture and implementation documentation
 ```

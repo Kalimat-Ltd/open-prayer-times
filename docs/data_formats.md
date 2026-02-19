@@ -107,14 +107,13 @@ The GUI and CLI calculate prayer times on the fly for a single city/date — tha
 
 - **Batch comparison and benchmarking** — comparing calculated vs. reference times across hundreds of cities and thousands of dates. Doing this on the fly each time would be slow and redundant.
 - **Reproducibility** — a CSV snapshot captures the exact state of reference data or calculations at a point in time, making reports and regression checks repeatable.
-- **Decoupled tooling** — scripts in `tools/` (parsers, mappers, analyzers) can work directly from CSV files without needing the full application stack running.
 
 ### What each file contains
 
-| File | Source | Columns | Purpose |
-|------|--------|---------|--------|
-| `reference_times.csv` | Parsed from `reference/<CC>/*.txt` by `tools/prayer_times_parser.py` | `year, month, day, city, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, lat, long, area` | Normalized raw reference data. Keeps the original city file name as the `city` column. This is the closest representation to the source truth before any mapping. |
-| `all_times.csv` | Built by `tools/map_times_to_cities.py` from `reference_times.csv` (+ official times) | `year, month, day, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, city_id` | Mapped dataset: each row is linked to a `loc.csv` city by numeric `city_id`. Raw text fields (`city`, `lat`, `long`, `area`) are removed. This is the file used by downstream analysis scripts that need to join reference times with city parameters. |
+| File | Columns | Purpose |
+|------|---------|--------|
+| `reference_times.csv` | `year, month, day, city, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, lat, long, area` | Normalized raw reference data. Keeps the original city file name as the `city` column. This is the closest representation to the source truth before any mapping. |
+| `all_times.csv` | `year, month, day, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, city_id` | Mapped dataset: each row is linked to a `loc.csv` city by numeric `city_id`. Raw text fields (`city`, `lat`, `long`, `area`) are removed. This is the file used by downstream analysis scripts that need to join reference times with city parameters. |
 
 ### Why three files instead of one
 
