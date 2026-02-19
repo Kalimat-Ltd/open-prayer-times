@@ -65,13 +65,6 @@ python -m src.app.presentation.gui_app
 python -m src.app.presentation.cli --city "Egypt, Cairo" --date 2025-01-15
 ```
 
-After installing the package, script entry points are also available:
-
-```bash
-open-prayer-times --city "Egypt, Cairo" --date 2025-01-15
-open-prayer-times-gui
-```
-
 ## Project Structure
 
 ```
