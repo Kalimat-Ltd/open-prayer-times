@@ -7,8 +7,9 @@ import datetime
 import math
 import threading
 import queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from src.app.infrastructure.optimizer.objective import (
     _compute_detailed_errors,
@@ -216,6 +217,105 @@ def ask_optimization_result_dialog(parent, title, message):
 
 
 # =============================================================================
+# Clustering helpers
+# =============================================================================
+
+
+def _cluster_reference_cities(
+    cities: list,
+    radius_km: float = 150.0,
+) -> list:
+    """
+    Group reference cities into geographic clusters using a greedy radius sweep.
+
+    Cities are sorted by number of reference dates (descending) so the city
+    with the most data becomes the cluster representative.  Every unassigned
+    city within *radius_km* of the current representative is merged into the
+    same cluster.
+
+    Returns a list of (representative_city_dict, [member_city_dicts]) tuples.
+    The representative is included in the member list.
+    """
+    import geopy.distance  # already a project dependency
+
+    # Sort by reference-date count descending so data-rich cities lead
+    sorted_cities = sorted(
+        cities,
+        key=lambda c: len(c.get("available_dates") or []),
+        reverse=True,
+    )
+
+    assigned: set = set()  # indices into sorted_cities
+    clusters: list = []
+
+    for i, rep in enumerate(sorted_cities):
+        if i in assigned:
+            continue
+        assigned.add(i)
+        members = [rep]
+        rep_lat = float(rep["loc"].get("latitude", 0))
+        rep_lon = float(rep["loc"].get("longitude", 0))
+        for j, other in enumerate(sorted_cities):
+            if j in assigned:
+                continue
+            other_lat = float(other["loc"].get("latitude", 0))
+            other_lon = float(other["loc"].get("longitude", 0))
+            try:
+                dist_km = geopy.distance.geodesic(
+                    (rep_lat, rep_lon), (other_lat, other_lon)
+                ).km
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+                continue
+            if dist_km <= radius_km:
+                assigned.add(j)
+                members.append(other)
+        clusters.append((rep, members))
+
+    return clusters
+
+
+def _select_by_farthest_point(
+    representatives: list,
+    max_n: int,
+) -> list:
+    """
+    Reduce *representatives* to *max_n* cities that maximise geographic spread
+    using a greedy farthest-point (k-centres) algorithm.
+
+    Each entry in *representatives* must be a city dict with a nested 'loc'
+    dict that contains 'latitude' and 'longitude'.
+    """
+    import geopy.distance
+
+    if max_n <= 0 or max_n >= len(representatives):
+        return list(representatives)
+
+    def _lat_lon(city):
+        loc = city.get("loc", {})
+        return float(loc.get("latitude", 0)), float(loc.get("longitude", 0))
+
+    def _dist(a, b):
+        try:
+            return geopy.distance.geodesic(_lat_lon(a), _lat_lon(b)).km
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError):
+            return 0.0
+
+    # Start with the city that has the most reference dates
+    selected = [
+        max(representatives, key=lambda c: len(c.get("available_dates") or []))
+    ]
+    remaining = [c for c in representatives if c is not selected[0]]
+
+    while len(selected) < max_n and remaining:
+        # Pick the city whose minimum distance to any selected city is greatest
+        best = max(remaining, key=lambda c: min(_dist(c, s) for s in selected))
+        selected.append(best)
+        remaining.remove(best)
+
+    return selected
+
+
+# =============================================================================
 # Batch Optimization Dashboard
 # =============================================================================
 
@@ -229,15 +329,23 @@ def _run_country_optimization(
     stop_event,
     max_cpu_workers=None,
     rounding="nearest",
+    cluster_radius_km=150.0,
+    max_cities: Optional[int] = None,
 ):
     """
     Run optimization for a single country.  Executed in a background thread.
 
     ref_files_info: list of (ref_filepath, loc_data_dict) for cities with ref data.
+
+    Cities are first grouped into geographic clusters (radius = cluster_radius_km).
+    One representative per cluster is chosen (the city with the most reference
+    dates).  If max_cities is set and the number of representatives exceeds it,
+    farthest-point selection further reduces the set.  The selected
+    representatives are then optimized in parallel using ThreadPoolExecutor.
+
     Puts messages on result_queue as (country_code, msg_type, payload) tuples.
     msg_type is one of: 'progress', 'city_done', 'done', 'error'.
     """
-    _ = max_cpu_workers
     try:
         if not ref_files_info:
             result_queue.put((country_code, "error", "No reference cities found"))
@@ -275,12 +383,39 @@ def _run_country_optimization(
             result_queue.put((country_code, "error", "No valid reference data"))
             return
 
+        # ------------------------------------------------------------------
+        # Step 1: Geographic clustering — pick one representative per cluster
+        # ------------------------------------------------------------------
+        clusters = _cluster_reference_cities(all_ref_cities, radius_km=cluster_radius_km)
+        representatives = [rep for rep, _ in clusters]
+
+        # Step 2: Optional max-cities cap using farthest-point selection
+        if max_cities and len(representatives) > max_cities:
+            representatives = _select_by_farthest_point(representatives, max_cities)
+
+        total_ref = len(all_ref_cities)   # total reference cities in country
+        total_opt = len(representatives)  # cities that will actually be optimized
+        n_clustered = total_ref - total_opt
+
+        if n_clustered > 0:
+            result_queue.put(
+                (
+                    country_code,
+                    "progress",
+                    f"Clustering: {total_opt}/{total_ref} cities selected "
+                    f"({n_clustered} merged into nearest representative).",
+                )
+            )
+
+        # ------------------------------------------------------------------
+        # Step 3: Define per-city worker (called from thread pool)
+        # ------------------------------------------------------------------
         city_results = {}
-        total_ref = len(all_ref_cities)
-        for idx, primary_city in enumerate(all_ref_cities, start=1):
+        completed_count = [0]  # mutable box so closure can mutate it
+
+        def _optimize_one(primary_city):
             if stop_event.is_set():
-                result_queue.put((country_code, "error", "Cancelled"))
-                return
+                return primary_city["name"], None
 
             primary_loc = primary_city["loc"]
             primary_ref_times = primary_city["reference_times"]
@@ -289,14 +424,6 @@ def _run_country_optimization(
             primary_lon = float(primary_loc["longitude"])
             primary_tz_name = primary_city.get("tz_name")
             selected_timezone = primary_loc.get("timezone", 0)
-
-            result_queue.put(
-                (
-                    country_code,
-                    "progress",
-                    f"Optimizing {primary_loc['name']} ({idx}/{total_ref})...",
-                )
-            )
 
             auxiliary_cities = []
             for other_city in all_ref_cities:
@@ -307,12 +434,10 @@ def _run_country_optimization(
                 aux_dates = other_city["available_dates"]
                 if not aux_ref or not aux_dates:
                     continue
-
                 aux_lat = float(loc_d.get("latitude", 0))
                 aux_lon = float(loc_d.get("longitude", 0))
                 aux_tz_name = other_city.get("tz_name")
                 aux_tz = loc_d.get("timezone", selected_timezone) or selected_timezone
-
                 auxiliary_cities.append(
                     {
                         "name": loc_d["name"],
@@ -330,9 +455,7 @@ def _run_country_optimization(
                 )
 
             conservative_aux = _filter_cities_by_conservative_rules(
-                primary_lat,
-                primary_lon,
-                auxiliary_cities,
+                primary_lat, primary_lon, auxiliary_cities
             )
 
             opt_result = run_multistage_optimization(
@@ -342,26 +465,59 @@ def _run_country_optimization(
                 tz_name=primary_tz_name,
             )
 
-            city_results[primary_city["name"]] = {
+            return primary_city["name"], {
                 "opt_result": opt_result,
                 "n_dates": len(primary_dates),
                 "n_aux": len(conservative_aux),
                 "has_residual": bool(opt_result.residual_corrections),
                 "duration_seconds": float(opt_result.duration_seconds or 0.0),
             }
-            result_queue.put(
-                (
-                    country_code,
-                    "city_done",
-                    {
-                        "city": primary_city["name"],
-                        "index": idx,
-                        "total": total_ref,
-                        "has_residual": bool(opt_result.residual_corrections),
-                        "duration_seconds": float(opt_result.duration_seconds or 0.0),
-                    },
+
+        # ------------------------------------------------------------------
+        # Step 4: Parallel execution via ThreadPoolExecutor
+        #         (scipy/numpy release GIL → real concurrency without pickling)
+        # ------------------------------------------------------------------
+        workers = max_cpu_workers if max_cpu_workers else None  # None → os.cpu_count()
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_city = {
+                executor.submit(_optimize_one, city): city
+                for city in representatives
+            }
+            for future in as_completed(future_to_city):
+                if stop_event.is_set():
+                    for f in future_to_city:
+                        f.cancel()
+                    result_queue.put((country_code, "error", "Cancelled"))
+                    return
+                try:
+                    city_name, payload = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    city_name = future_to_city[future]["name"]
+                    result_queue.put(
+                        (country_code, "progress", f"Error optimizing {city_name}: {exc}")
+                    )
+                    continue
+
+                if payload is None:
+                    continue  # cancelled mid-flight
+
+                city_results[city_name] = payload
+                completed_count[0] += 1
+                result_queue.put(
+                    (
+                        country_code,
+                        "city_done",
+                        {
+                            "city": city_name,
+                            "index": completed_count[0],
+                            "total": total_opt,
+                            "has_residual": payload["has_residual"],
+                            "duration_seconds": payload["duration_seconds"],
+                        },
+                    )
                 )
-            )
+
+
 
         baseline_mae_vals = []
         baseline_rmse_vals = []
@@ -669,6 +825,28 @@ class BatchOptimizationDashboard:
         # Progress summary
         self.progress_label = ttk.Label(ctrl_frame, text="")
         self.progress_label.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # --- Optimization settings (inline, right-aligned) ---
+        settings_frame = ttk.Frame(ctrl_frame)
+        settings_frame.pack(side=tk.RIGHT, padx=(0, 8))
+
+        ttk.Label(settings_frame, text="CPU Workers:").pack(side=tk.LEFT)
+        self.max_workers_var = tk.StringVar(value="")
+        ttk.Entry(settings_frame, textvariable=self.max_workers_var, width=3).pack(
+            side=tk.LEFT, padx=(2, 8)
+        )
+
+        ttk.Label(settings_frame, text="Max Cities:").pack(side=tk.LEFT)
+        self.max_cities_var = tk.StringVar(value="")
+        ttk.Entry(settings_frame, textvariable=self.max_cities_var, width=4).pack(
+            side=tk.LEFT, padx=(2, 8)
+        )
+
+        ttk.Label(settings_frame, text="Cluster Radius (km):").pack(side=tk.LEFT)
+        self.cluster_radius_var = tk.StringVar(value="150")
+        ttk.Entry(settings_frame, textvariable=self.cluster_radius_var, width=5).pack(
+            side=tk.LEFT, padx=(2, 0)
+        )
 
         # --- Table ---
         table_frame = ttk.Frame(self.win, padding="8 4 8 4")
@@ -987,6 +1165,28 @@ class BatchOptimizationDashboard:
         except (AttributeError, ValueError, TypeError, RuntimeError):
             pass
 
+        cluster_radius_km = 150.0
+        try:
+            cluster_radius_km = float(self.cluster_radius_var.get() or 150.0)
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+        max_cities: Optional[int] = None
+        try:
+            raw_mc = self.max_cities_var.get().strip()
+            if raw_mc:
+                max_cities = int(raw_mc)
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+        max_workers: Optional[int] = None
+        try:
+            raw_mw = self.max_workers_var.get().strip()
+            if raw_mw:
+                max_workers = int(raw_mw)
+        except (ValueError, TypeError, AttributeError):
+            pass
+
         self.current_thread = threading.Thread(
             target=_run_country_optimization,
             args=(
@@ -996,9 +1196,13 @@ class BatchOptimizationDashboard:
                 self.use_dst,
                 self.result_queue,
                 self.stop_event,
-                None,
+                max_workers,
             ),
-            kwargs={"rounding": rounding},
+            kwargs={
+                "rounding": rounding,
+                "cluster_radius_km": cluster_radius_km,
+                "max_cities": max_cities,
+            },
             daemon=True,
         )
         self.current_thread.start()
