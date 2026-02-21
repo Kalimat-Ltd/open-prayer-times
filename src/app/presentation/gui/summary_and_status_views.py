@@ -32,7 +32,15 @@ def show_conclusion_summary(self, location_data):
         )
         self.conclusion_text.config(state=tk.DISABLED)
         return
-    year = datetime.date.today().year
+    # Use the city's reference_year (the leap-cycle year the reference data was
+    # collected for) so errors are computed against the correct calendar year.
+    # Fall back to year_var (display year) then today's year.
+    _raw_ref_yr = location_data.get("reference_year") or ""
+    if str(_raw_ref_yr).strip().isdigit():
+        year = int(str(_raw_ref_yr).strip())
+    else:
+        _yv = getattr(self, "year_var", None)
+        year = int(_yv.get()) if _yv is not None else datetime.date.today().year
     prayers = ["fajr", "shurooq", "dhuhr", "asr", "maghrib", "isha"]
     offset_fields = [
         "fajr_offset",
@@ -142,8 +150,7 @@ def show_conclusion_summary(self, location_data):
                 if self.dst_var.get():
                     tz_name = location_data["timezone"]
                 tz = _get_pytz().timezone(location_data["timezone"])
-                today = datetime.date.today()
-                dt = datetime.datetime(today.year, today.month, today.day, 12, 0, 0)
+                dt = datetime.datetime(year, m, day, 12, 0, 0)
                 tz_offset_hours = tz.utcoffset(dt).total_seconds() / 3600.0
                 calc_kwargs = dict(
                     lat_dec=lat_dec,

@@ -130,7 +130,6 @@ def create_widgets(self):
     controls_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5))
     controls_frame.grid_columnconfigure(1, weight=1)
     controls_frame.grid_columnconfigure(3, weight=1)
-    controls_frame.grid_columnconfigure(5, weight=1)
     # Consider adding weight to a column after the last widget in controls_frame if the gap persists within controls_frame
 
     # Rounding controls
@@ -156,6 +155,22 @@ def create_widgets(self):
     month_combo.bind(
         "<<ComboboxSelected>>", lambda e: self.on_month_select(e, month_combo)
     )
+
+    # Year selector (controls which year prayer times are calculated/displayed for)
+    ttk.Label(controls_frame, text="Year:").grid(row=0, column=6, padx=(10, 5))
+    current_year = datetime.date.today().year
+    self.year_var = tk.IntVar(value=current_year)
+    year_spinbox = ttk.Spinbox(
+        controls_frame,
+        from_=2000,
+        to=2100,
+        textvariable=self.year_var,
+        width=6,
+        command=self.on_tab_changed,
+    )
+    year_spinbox.grid(row=0, column=7, sticky="w")
+    year_spinbox.bind("<Return>", lambda e: self.on_tab_changed())
+    year_spinbox.bind("<FocusOut>", lambda e: self.on_tab_changed())
 
     # Create notebook for tabs
     self.notebook = ttk.Notebook(middle_frame)
@@ -657,6 +672,7 @@ def _parse_location_row(self, row, row_num):
         location["isha_offset"] = _to_float(row.get("isha_offset"), 0.0)
         location["is_optimized"] = _to_int(row.get("is_optimized", "0"), 0) == 1
         location["is_official"] = _to_int(row.get("is_official"), 0)
+        location["reference_year"] = _to_int(row.get("reference_year"), None)
         location["residual_corrections"] = row.get("residual_corrections", "") or ""
         location["clock_offsets"] = row.get("clock_offsets", "") or ""
         return location

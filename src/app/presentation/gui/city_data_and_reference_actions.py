@@ -242,6 +242,7 @@ def apply_to_country(self, entries, original_data, window):
         new_isha_offset = form_angles["isha_offset"]
         new_is_official = form_angles["is_official"]
         new_is_optimized = form_angles["is_optimized"]
+        new_reference_year = form_angles.get("reference_year", "")
         new_residual_corrections = form_angles["residual_corrections"]
         new_clock_offsets = form_angles["clock_offsets"]
         # 3. Find affected cities by country code
@@ -279,6 +280,7 @@ def apply_to_country(self, entries, original_data, window):
             f"    Asr: {new_asr_offset}\n"
             f"    Maghrib: {new_maghrib_offset}\n"
             f"    Isha: {new_isha_offset}\n\n"
+            f"  Reference Year: {new_reference_year if new_reference_year else 'not set'}\n\n"
             f"to ALL {len(affected_cities)} cities with country code '{current_country_code}'.\n\n"
             f"Proceed?"
         )
@@ -328,6 +330,7 @@ def apply_to_country(self, entries, original_data, window):
                     "residual_corrections"
                 ] = new_residual_corrections
                 self.locations_data[i]["clock_offsets"] = new_clock_offsets
+                self.locations_data[i]["reference_year"] = new_reference_year
                 updated_city_ids.append(self.locations_data[i].get("id"))
                 update_count += 1
         # 5. Save and provide feedback

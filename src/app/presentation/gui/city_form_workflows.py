@@ -460,6 +460,30 @@ def _create_city_form(self, parent_window, initial_data=None):
     string_vars["is_optimized"] = self.is_optimized_var.get()
     row_num += 1
 
+    # Add reference_year Spinbox (used to select which year the reference data belongs to)
+    ttk.Label(frame, text="Reference Year:").grid(
+        row=row_num + 1, column=0, sticky="w", pady=2
+    )
+    raw_ref_year = (
+        (initial_data.get("reference_year", "") or "") if initial_data else ""
+    )
+    ref_year_str = str(int(raw_ref_year)) if str(raw_ref_year).strip().isdigit() else ""
+    self.reference_year_var = tk.StringVar(value=ref_year_str)
+    ref_year_spinbox = ttk.Spinbox(
+        frame,
+        from_=2000,
+        to=2100,
+        textvariable=self.reference_year_var,
+        width=8,
+    )
+    ref_year_spinbox.grid(row=row_num + 1, column=1, sticky="w", padx=5, pady=2)
+    ttk.Label(frame, text="(year the reference data was sourced from)").grid(
+        row=row_num + 1, column=2, sticky="w", padx=(0, 5), pady=2
+    )
+    entries["reference_year"] = ref_year_spinbox
+    string_vars["reference_year"] = self.reference_year_var
+    row_num += 1
+
     # Add residual_corrections (JSON text area)
     ttk.Label(frame, text="--- Advanced (JSON) ---").grid(
         row=row_num + 1, column=0, columnspan=2, pady=(5, 2)
@@ -753,6 +777,10 @@ def _validate_and_get_form_data(
         # Handle is_optimized checkbox (store as 0/1)
         data["is_official"] = entries["is_official"]
         data["is_optimized"] = self.is_optimized_var.get()
+
+        # Handle reference_year (integer or empty)
+        ref_year_raw = self.reference_year_var.get().strip()
+        data["reference_year"] = int(ref_year_raw) if ref_year_raw.isdigit() else ""
 
         # Handle residual_corrections and clock_offsets (Text widgets)
         residual_text = entries["residual_corrections"].get("1.0", tk.END).strip()
