@@ -19,13 +19,13 @@ from src.app.infrastructure.optimizer.shared import (
     PRAYER_NAMES,
     _filter_cities_by_conservative_rules,
     _find_closest_city_by_distance,
-    _load_reference_file,
     _load_residual_model_from_json,
     _matches_conservative_rules,
 )
 from src.app.infrastructure.optimizer.multistage.pipeline import (
     run_multistage_optimization,
 )
+from src.app.infrastructure.reference_repository import load_reference_times
 
 
 def _reset_stage1_defaults(loc_dict):
@@ -244,7 +244,11 @@ def _run_country_optimization(
 
         all_ref_cities = []
         for ref_path, loc_d in ref_files_info:
-            ref_times, ref_dates = _load_reference_file(ref_path)
+            _raw_ry = loc_d.get("reference_year") or ""
+            _batch_ref_year: int | None = (
+                int(str(_raw_ry).strip()) if str(_raw_ry).strip().isdigit() else None
+            )
+            ref_times, ref_dates = load_reference_times(ref_path, year=_batch_ref_year)
             if not ref_times:
                 continue
             city_tz_name = None
@@ -1410,62 +1414,17 @@ def optimize_parameters_for_city(
         return
 
     # --- Load reference data ---
-    all_reference_times = {}
-    available_dates = []
-    current_year = datetime.date.today().year
+    # Use the stored reference_year for this city (if set) so the optimizer sees
+    # the correct leap-cycle year that best matches the reference data.
+    raw_ref_year = selected_data.get("reference_year", "") or ""
+    reference_year: int | None = None
+    if str(raw_ref_year).strip().isdigit():
+        reference_year = int(str(raw_ref_year).strip())
+
     try:
-        with open(ref_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            if not lines:
-                messagebox.showerror(
-                    "No Reference Data", f"Reference file '{ref_file}' is empty."
-                )
-                return
-            for line in lines:
-                parts = line.strip().split("\t")
-                if len(parts) != 7:
-                    continue
-                date_str, fajr, sunrise, dhuhr, asr, maghrib, isha = parts
-                try:
-                    for fmt in ("%d-%b", "%d/%m", "%m/%d", "%Y-%m-%d", "%d-%m-%Y"):
-                        try:
-                            date_obj_tmp = datetime.datetime.strptime(date_str, fmt)
-                            year_to_use = (
-                                date_obj_tmp.year
-                                if date_obj_tmp.year != 1900
-                                else current_year
-                            )
-                            date_obj = datetime.date(
-                                year_to_use, date_obj_tmp.month, date_obj_tmp.day
-                            )
-                            break
-                        except ValueError:
-                            pass
-                    else:
-                        print(f"Skipping line with unparsed date: {line.strip()}")
-                        continue
-
-                    # Basic time format validation
-                    datetime.datetime.strptime(
-                        fajr.split(":")[0] + ":" + fajr.split(":")[1], "%H:%M"
-                    )
-                    datetime.datetime.strptime(
-                        isha.split(":")[0] + ":" + isha.split(":")[1], "%H:%M"
-                    )
-
-                    all_reference_times[date_obj] = {
-                        "fajr": fajr,
-                        "shurooq": sunrise,
-                        "dhuhr": dhuhr,
-                        "asr": asr,
-                        "maghrib": maghrib,
-                        "isha": isha,
-                    }
-                    available_dates.append(date_obj)
-                except ValueError as ve:
-                    print(f"Skipping line with invalid date/time: '{date_str}': {ve}")
-                except (TypeError, KeyError, RuntimeError, OSError) as date_e:
-                    print(f"Skipping line: {line.strip()} -> {date_e}")
+        all_reference_times, available_dates = load_reference_times(
+            ref_file, year=reference_year
+        )
     except (TypeError, KeyError, RuntimeError, OSError) as e:
         messagebox.showerror(
             "Error", f"Failed to read reference file '{ref_file}': {e}"
@@ -1527,7 +1486,15 @@ def optimize_parameters_for_city(
                 continue
 
             aux_ref_path = os.path.join(ref_dir, ref_filename)
-            aux_ref_times, aux_dates = _load_reference_file(aux_ref_path)
+            _raw_aux_ry = loc_data.get("reference_year") or ""
+            _aux_ref_year: int | None = (
+                int(str(_raw_aux_ry).strip())
+                if str(_raw_aux_ry).strip().isdigit()
+                else None
+            )
+            aux_ref_times, aux_dates = load_reference_times(
+                aux_ref_path, year=_aux_ref_year
+            )
             if not aux_ref_times or not aux_dates:
                 continue
 

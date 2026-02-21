@@ -1543,14 +1543,47 @@ def _detect_unstable_regime_dates(
     return regime_dates
 
 
+def _is_timezone_dst_transition(
+    tz_name: str,
+    date1: datetime.date,
+    date2: datetime.date,
+    detected_shift_minutes: float,
+) -> bool:
+    """Return True when the UTC offset for *tz_name* changes between *date1*
+    and *date2* by approximately *detected_shift_minutes*.
+
+    If so, the jump in reference data is explained by the IANA timezone
+    (the prayer calculator already handles it), so it should NOT be
+    treated as a reference-data artefact.
+    """
+    try:
+        import pytz  # type: ignore
+
+        tz = pytz.timezone(tz_name)
+        # Use noon to stay well away from the actual transition hour.
+        dt1 = tz.localize(datetime.datetime(date1.year, date1.month, date1.day, 12))
+        dt2 = tz.localize(datetime.datetime(date2.year, date2.month, date2.day, 12))
+        tz_shift = (
+            dt2.utcoffset().total_seconds() - dt1.utcoffset().total_seconds()
+        ) / 60.0  # minutes
+        return abs(tz_shift - detected_shift_minutes) < 15.0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _detect_reference_clock_shifts(
     reference_times: Dict[datetime.date, Dict[str, str]],
     all_dates: List[datetime.date],
+    tz_name: Optional[str] = None,
 ) -> Dict[datetime.date, float]:
     """Detect likely clock-shift artifact dates and their median shift minutes.
 
     A date is flagged when most prayers shift by roughly +/-60 minutes
     compared to the previous day with low spread across prayers.
+
+    If *tz_name* is provided and the detected jump matches a timezone DST
+    transition on the same dates, the jump is considered natural (handled
+    by the prayer calculator) and is NOT flagged.
     """
     ordered = sorted(d for d in all_dates if d in reference_times)
     if len(ordered) < 2:
@@ -1583,6 +1616,13 @@ def _detect_reference_clock_shifts(
         mad = float(percentile(abs_dev, 0.5))
 
         if abs(abs(median_shift) - 60.0) <= 12.0 and mad <= 8.0:
+            # Check if this jump is explained by a timezone DST transition.
+            # If the calculator already accounts for DST via the IANA
+            # timezone, storing a clock-offset would double-apply the shift.
+            if tz_name and _is_timezone_dst_transition(
+                tz_name, prev_d, curr_d, median_shift
+            ):
+                continue
             # The jump between prev_d -> curr_d is caused by the transition
             # occurring on prev_d (local civil clock change), so anchor the
             # artifact to prev_d to avoid a one-day late flag.
@@ -1594,8 +1634,11 @@ def _detect_reference_clock_shifts(
 def _detect_clock_shift_blocks(
     reference_times: Dict[datetime.date, Dict[str, str]],
     all_dates: List[datetime.date],
+    tz_name: Optional[str] = None,
 ) -> List[tuple[datetime.date, datetime.date, int]]:
-    shift_map = _detect_reference_clock_shifts(reference_times, all_dates)
+    shift_map = _detect_reference_clock_shifts(
+        reference_times, all_dates, tz_name=tz_name
+    )
     if not shift_map:
         return []
 
@@ -2065,7 +2108,25 @@ def optimize_pure_astronomical_core(
     clock_blocks: List[tuple[datetime.date, datetime.date, int]] = []
     artifact_dates: set[datetime.date] = set()
     if bool(cfg.detect_clock_offsets):
-        clock_blocks = _detect_clock_shift_blocks(reference_times, all_dates_sorted)
+        # Pass tz_name so DST transitions already handled by the calculator
+        # are not misidentified as reference-data clock-shift artefacts.
+        # Fall back to location_data["timezone"] if tz_name was not provided
+        # (e.g. DST checkbox unchecked) but the timezone is an IANA name.
+        _clock_tz = tz_name
+        if not _clock_tz:
+            _tz_val = location_data.get("timezone")
+            if isinstance(_tz_val, str):
+                _tz_txt = _tz_val.strip()
+                try:
+                    float(_tz_txt)
+                except (ValueError, TypeError):
+                    if _tz_txt:
+                        _clock_tz = _tz_txt
+        clock_blocks = _detect_clock_shift_blocks(
+            reference_times,
+            all_dates_sorted,
+            tz_name=_clock_tz,
+        )
         for block_start, block_end, _block_offset in clock_blocks:
             cursor = block_start
             while cursor <= block_end:
