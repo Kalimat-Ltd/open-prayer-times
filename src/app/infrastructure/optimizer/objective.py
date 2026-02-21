@@ -230,6 +230,7 @@ def _compute_detailed_errors(
     residual_active_dates=None,
     settings_source=None,
     clock_offsets_json=None,
+    rounding="off",
 ):
     """
     Compute per-prayer error statistics using the final optimized parameters.
@@ -263,7 +264,7 @@ def _compute_detailed_errors(
                 isha_angle=isha_angle,
                 isha_minutes=isha_minutes,
                 target_date=date_obj,
-                rounding="off",
+                rounding=rounding,
             )
             if offsets:
                 calc_kwargs.update(offsets)

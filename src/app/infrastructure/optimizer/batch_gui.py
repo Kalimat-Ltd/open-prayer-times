@@ -228,6 +228,7 @@ def _run_country_optimization(
     result_queue,
     stop_event,
     max_cpu_workers=None,
+    rounding="nearest",
 ):
     """
     Run optimization for a single country.  Executed in a background thread.
@@ -422,6 +423,7 @@ def _run_country_optimization(
                 residual_model=baseline_residual_model,
                 settings_source=loc,
                 clock_offsets_json=loc.get("clock_offsets", "") or "",
+                rounding=rounding,
             )
 
             opt = city_payload["opt_result"]
@@ -459,6 +461,7 @@ def _run_country_optimization(
                 residual_model=after_residual_model,
                 settings_source=[loc, opt],
                 clock_offsets_json=opt.clock_offsets or "",
+                rounding=rounding,
             )
 
             if math.isfinite(baseline_city_mae):
@@ -978,6 +981,12 @@ class BatchOptimizationDashboard:
         info = self.countries[cc]
         self._update_row(cc, status=self.STATUS_RUNNING)
 
+        rounding = "nearest"
+        try:
+            rounding = self.app.rounding_var.get() or "nearest"
+        except (AttributeError, ValueError, TypeError, RuntimeError):
+            pass
+
         self.current_thread = threading.Thread(
             target=_run_country_optimization,
             args=(
@@ -989,6 +998,7 @@ class BatchOptimizationDashboard:
                 self.stop_event,
                 None,
             ),
+            kwargs={"rounding": rounding},
             daemon=True,
         )
         self.current_thread.start()
@@ -1589,6 +1599,7 @@ def optimize_parameters_for_city(
         ),
         settings_source=baseline_location_data,
         clock_offsets_json=baseline_location_data.get("clock_offsets", "") or "",
+        rounding=self.rounding_var.get() or "nearest",
     )
 
     print(f"[1/3] Baseline MAE: {baseline_mae:.2f} min, RMSE: {baseline_rmse:.2f} min")
@@ -1640,6 +1651,7 @@ def optimize_parameters_for_city(
         residual_model=_load_residual_model_from_json(opt_result.residual_corrections),
         settings_source=[baseline_location_data, opt_result],
         clock_offsets_json=opt_result.clock_offsets or "",
+        rounding=self.rounding_var.get() or "nearest",
     )
 
     # --- Check if optimization found improvement ---
