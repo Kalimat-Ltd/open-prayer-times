@@ -28,6 +28,7 @@ Top controls bar:
 
 - **Rounding** dropdown — `off`, `nearest`, `floor`, `ceil`. Controls how calculated times are rounded. Changing this refreshes the display immediately
 - **Month** dropdown — select which month to display (defaults to current month)
+- **Year** spinbox — select which year to display calculated prayer times for (defaults to current year, range 2000–2100). Changing the year triggers a full tab refresh. This display year is also used as a fallback when a city has no `reference_year` set
 
 Three tabs (notebook widget):
 
@@ -44,6 +45,13 @@ Three tabs (notebook widget):
 2. **Reference Times** — shows the reference prayer times for the selected city (loaded from `reference/<CC>/<city>.txt`). If no reference file exists, the tab shows options to create or open one
 
 3. **Conclusion** — shows a detailed per-month and per-prayer error summary comparing calculated times against reference data. The table includes unsigned and signed average errors per prayer per month, total errors, most/least accurate months, and overall averages. This calculation takes into account constant offsets, residual corrections, and clock-offset adjustments
+
+   The year used for this computation follows a priority chain:
+   1. The city's `reference_year` from `loc.csv` (the year the reference data was collected)
+   2. The GUI display year (`year_var`, set in the Year spinbox)
+   3. `datetime.date.today().year`
+
+   This ensures the conclusion tab compares calculated times against the same year's reference dates the source data came from, rather than the current year or whatever the display year happens to be.
 
 Each tab has font size `+`/`-` buttons in the top-right corner.
 
@@ -80,6 +88,7 @@ At the bottom, a status bar shows three counters:
    - When high-lat method is Angle Based: Custom Fajr Angle, Custom Isha Angle, and Fallback Method fields appear
    - Per-prayer offsets (Fajr, Shurooq, Dhuhr, Asr, Maghrib, Isha) in minutes
    - Is Optimized checkbox
+   - **Reference Year** spinbox — the year the reference data was sourced from. Used by the optimizer, conclusion tab, and RMSE cache to load reference dates in the correct year context. Set this to the year that matches the reference data for the city. Leave empty if the reference year is unknown
    - Advanced JSON fields: Residual Corrections, Clock Offsets (scrollable text boxes)
 3. Click **Save City** to persist. The city is appended to `loc.csv`
 
@@ -159,22 +168,22 @@ PrayerApp.on_city_select = _resolve_method("on_city_select")
 # ... etc.
 ```
 
-This allows the GUI code (~4,000+ lines total) to be split into focused, maintainable modules while presenting a single `PrayerApp` class to callers.
+This allows the GUI code to be split into focused, maintainable modules while presenting a single `PrayerApp` class to callers.
 
 ## Module Responsibilities
 
-| Module | Lines | Responsibility |
-|--------|-------|---------------|
-| `app_shell_and_loading.py` | ~640 | `__init__`, `create_widgets`, `on_closing`, `on_tab_changed`, `load_locations`, `process_pending_reference_changes`, `refresh_country_filter`, `run_selected_city_optimizer` — root layout, widget creation, loading lifecycle, reference file watcher setup, status wiring |
-| `city_list_and_calculations.py` | ~1,250 | City name/RMSE indexing (SQLite cache), listbox population, filtering (search / country / latitude / RMSE / MAE / N), city selection handling, daily prayer-time rendering with inline diffs and high-lat indicators, clipboard copy, month selection |
-| `city_form_workflows.py` | ~770 | `_create_city_form` (scrollable form with dynamic field visibility based on calculation method and high-lat method), `open_add_city_window`, `open_modify_city_window`, `_validate_and_get_form_data` |
-| `city_data_and_reference_actions.py` | ~400 | `save_new_city`, `save_modified_city`, `apply_to_country`, `delete_selected_city` — city CRUD with CSV persistence, country-wide parameter propagation |
-| `summary_and_status_views.py` | ~320 | `show_conclusion_summary` (per-month per-prayer error analysis with residual and clock-offset accounting), `update_status_bar` (optimization coverage statistics) |
-| `constants.py` | | `FIELD_NAMES` — canonical `loc.csv` column order (35 fields) |
-| `deps.py` | | Lazy dependency loader for heavy runtime imports (TimezoneFinder, geopy, watchdog, pytz, prayer calculator, optimizer functions) |
-| `shared.py` | | Wiring helpers re-exporting lazy-loaded dependencies and the `ReferenceFolderHandler` class |
-| `clock.py` | | `get_clock_offset_for_date` — applies per-date reference clock-shift offset from JSON blocks |
-| `file_ops.py` | | `rewrite_location_file` — safe CSV rewrite with backup/restore semantics |
+| Module | Responsibility |
+|--------|---------------|
+| `app_shell_and_loading.py` | `__init__`, `create_widgets`, `on_closing`, `on_tab_changed`, `load_locations`, `process_pending_reference_changes`, `refresh_country_filter`, `run_selected_city_optimizer` — root layout, widget creation (including Month/Year selectors and Rounding dropdown), loading lifecycle, reference file watcher setup, status wiring |
+| `city_list_and_calculations.py` | City name/RMSE indexing (SQLite cache), listbox population, filtering (search / country / latitude / RMSE / MAE / N), city selection handling, daily prayer-time rendering with inline diffs and high-lat indicators, clipboard copy, month selection |
+| `city_form_workflows.py` | `create_city_form` (scrollable form with dynamic field visibility based on calculation method and high-lat method, including the Reference Year spinbox), `open_add_city_window`, `open_modify_city_window`, `validate_and_get_form_data` |
+| `city_data_and_reference_actions.py` | `save_new_city`, `save_modified_city`, `apply_to_country`, `delete_selected_city` — city CRUD with CSV persistence, country-wide parameter propagation |
+| `summary_and_status_views.py` | `show_conclusion_summary` (per-month per-prayer error analysis with residual and clock-offset accounting, reference-year-aware date loading), `update_status_bar` (optimization coverage statistics) |
+| `constants.py` | `FIELD_NAMES` — canonical `loc.csv` column order (37 fields) |
+| `deps.py` | Lazy dependency loader for heavy runtime imports (TimezoneFinder, geopy, watchdog, pytz, prayer calculator, optimizer functions) |
+| `shared.py` | Wiring helpers re-exporting lazy-loaded dependencies and the `ReferenceFolderHandler` class |
+| `clock.py` | `get_clock_offset_for_date` — applies per-date reference clock-shift offset from JSON blocks |
+| `file_ops.py` | `rewrite_location_file` — safe CSV rewrite with backup/restore semantics |
 
 ## Reference File Watcher
 
