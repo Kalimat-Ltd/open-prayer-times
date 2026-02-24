@@ -741,7 +741,13 @@ def get_selected_location_data(self):
     selection_indices = self.city_listbox.curselection()
     if not selection_indices:
         return None
-    selected_id = self.city_listbox_ids[selection_indices[0]]
+    idx = selection_indices[0]
+    # Guard: curselection() can hold a stale index if the listbox was
+    # repopulated (e.g. filter changed) while it was disabled — the old
+    # selection index may now exceed the new city_listbox_ids length.
+    if idx >= len(self.city_listbox_ids):
+        return None
+    selected_id = self.city_listbox_ids[idx]
     for location in self.locations_data:
         if location["id"] == selected_id:
             return location
