@@ -1560,14 +1560,21 @@ def _is_timezone_dst_transition(
         import pytz  # type: ignore
 
         tz = pytz.timezone(tz_name)
-        # Use noon to stay well away from the actual transition hour.
-        dt1 = tz.localize(datetime.datetime(date1.year, date1.month, date1.day, 12))
-        dt2 = tz.localize(datetime.datetime(date2.year, date2.month, date2.day, 12))
-        tz_shift = (
-            dt2.utcoffset().total_seconds() - dt1.utcoffset().total_seconds()
-        ) / 60.0  # minutes
+        # Use noon + is_dst=False to avoid ambiguous/nonexistent time errors at
+        # DST boundaries (rare at noon, but guards against edge-case locales).
+        dt1 = tz.localize(
+            datetime.datetime(date1.year, date1.month, date1.day, 12), is_dst=False
+        )
+        dt2 = tz.localize(
+            datetime.datetime(date2.year, date2.month, date2.day, 12), is_dst=False
+        )
+        off1 = dt1.utcoffset()
+        off2 = dt2.utcoffset()
+        if off1 is None or off2 is None:
+            return False
+        tz_shift = (off2.total_seconds() - off1.total_seconds()) / 60.0  # minutes
         return abs(tz_shift - detected_shift_minutes) < 15.0
-    except Exception:  # noqa: BLE001
+    except (ImportError, KeyError, AttributeError):
         return False
 
 

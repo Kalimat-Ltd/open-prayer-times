@@ -76,7 +76,7 @@ def __init__(self, root):
     self.min_mae_var = tk.StringVar(value="")
     self.max_n_var = tk.StringVar(value="")
     self._modify_string_vars = {}
-    self._form_outer_frame = None
+    self.form_outer_frame = None
     self.rewrite_location_file = lambda: rewrite_location_file(self)
     self._reference_paths_lock = threading.Lock()
     self._pending_reference_paths = set()

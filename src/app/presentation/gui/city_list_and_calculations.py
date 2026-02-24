@@ -757,7 +757,10 @@ def disable_action_buttons(self):
 
 def enable_action_buttons(self):
     """Enables buttons that require a selection."""
-    self.optimize_settings_button.config(state=tk.NORMAL)
+    # Never re-enable the optimize button while a single-city optimization
+    # is in progress — the subprocess guard owns that button's state.
+    if not getattr(self, "_single_city_opt_running", False):
+        self.optimize_settings_button.config(state=tk.NORMAL)
     self.modify_button.config(state=tk.NORMAL)
     self.delete_button.config(state=tk.NORMAL)
 
@@ -800,10 +803,12 @@ def on_city_select(self, event):
             self.city_listbox.see(idx)
             break
     ref_file = self._get_reference_file_path(selected_data)
-    if ref_file and os.path.exists(ref_file):
-        self.optimize_settings_button.config(state=tk.NORMAL)
-    else:
-        self.optimize_settings_button.config(state=tk.DISABLED)
+    _opt_running = getattr(self, "_single_city_opt_running", False)
+    if not _opt_running:
+        if ref_file and os.path.exists(ref_file):
+            self.optimize_settings_button.config(state=tk.NORMAL)
+        else:
+            self.optimize_settings_button.config(state=tk.DISABLED)
     self.enable_action_buttons()
     if selected_data.get("timezone_name"):
         self.dst_var.set(False)

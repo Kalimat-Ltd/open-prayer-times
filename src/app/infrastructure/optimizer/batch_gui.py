@@ -8,6 +8,7 @@ import math
 import threading
 import queue
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from pathlib import Path
 import numpy as np
 from typing import List, Literal, Optional
 
@@ -641,21 +642,8 @@ def _run_country_optimization(
         import traceback
 
         result_queue.put((country_code, "error", f"{e}\n{traceback.format_exc()}"))
+        return
 
-    """
-    Run optimization for a single country.  Executed in a background thread.
-
-    ref_files_info: list of (ref_filepath, loc_data_dict) for cities with ref data.
-
-    Cities are first grouped into geographic clusters (radius = cluster_radius_km).
-    One representative per cluster is chosen (the city with the most reference
-    dates).  If max_cities is set and the number of representatives exceeds it,
-    farthest-point selection further reduces the set.  The selected
-    representatives are then optimized in parallel using ThreadPoolExecutor.
-
-    Puts messages on result_queue as (country_code, msg_type, payload) tuples.
-    msg_type is one of: 'progress', 'city_done', 'done', 'error'.
-    """
     try:
         if not ref_files_info:
             result_queue.put((country_code, "error", "No reference cities found"))
@@ -1066,7 +1054,7 @@ class BatchOptimizationDashboard:
         self.total_to_run = 0
         self.completed_count = 0
         self._active_executor = None  # ProcessPoolExecutor while running
-
+        self.global_thread: threading.Thread | None = None
         self._build_window()
         self._discover_countries()
         self._populate_table()
@@ -1500,6 +1488,7 @@ class BatchOptimizationDashboard:
                 _run_global_pool_inner()
             except Exception as fatal:  # noqa: BLE001
                 import traceback
+
                 err_text = (
                     f"Batch optimizer crashed unexpectedly:\n"
                     f"{fatal}\n\n{traceback.format_exc()}"
@@ -1581,7 +1570,9 @@ class BatchOptimizationDashboard:
                     for cc, (all_ref_cities, representatives) in country_prep.items():
                         total_opt = len(representatives)
                         for city in representatives:
-                            fut = executor.submit(_run_city_task, cc, city, all_ref_cities)
+                            fut = executor.submit(
+                                _run_city_task, cc, city, all_ref_cities
+                            )
                             future_to_meta[fut] = (cc, city, all_ref_cities, total_opt)
 
                     for future in as_completed(future_to_meta):
@@ -1609,15 +1600,26 @@ class BatchOptimizationDashboard:
                             # user gets a visible dialog rather than a buried log line.
                             from concurrent.futures import BrokenExecutor
                             from concurrent.futures.process import BrokenProcessPool
+
                             _is_fatal = (
-                                isinstance(exc, (MemoryError, BrokenExecutor, BrokenProcessPool))
+                                isinstance(
+                                    exc,
+                                    (MemoryError, BrokenExecutor, BrokenProcessPool),
+                                )
                                 or "paging file" in exc_str.lower()
                                 or "DLL load failed" in exc_str
                                 or "cannot allocate memory" in exc_str.lower()
-                                or ("worker" in exc_str.lower() and "terminated" in exc_str.lower())
+                                or (
+                                    "worker" in exc_str.lower()
+                                    and "terminated" in exc_str.lower()
+                                )
                             )
                             self.result_queue.put(
-                                (cc, "progress", f"Error optimizing {city_name}: {exc_str}")
+                                (
+                                    cc,
+                                    "progress",
+                                    f"Error optimizing {city_name}: {exc_str}",
+                                )
                             )
                             if _is_fatal:
                                 fatal_msg = (
@@ -1629,9 +1631,16 @@ class BatchOptimizationDashboard:
                                 )
                                 # Mark ALL remaining pending countries as failed
                                 for pending_cc in country_prep:
-                                    if country_completed[pending_cc][0] < country_expected[pending_cc]:
+                                    if (
+                                        country_completed[pending_cc][0]
+                                        < country_expected[pending_cc]
+                                    ):
                                         self.result_queue.put(
-                                            (pending_cc, "error", f"Memory error: {exc_str}")
+                                            (
+                                                pending_cc,
+                                                "error",
+                                                f"Memory error: {exc_str}",
+                                            )
                                         )
                                 try:
                                     self.win.after(
@@ -1690,7 +1699,6 @@ class BatchOptimizationDashboard:
         self.global_thread.start()
         self.root.after(200, self._poll_queue)
 
-
     def _kill_active_executor(self):
         """Hard-kill all worker processes in the active ProcessPoolExecutor.
 
@@ -1712,18 +1720,18 @@ class BatchOptimizationDashboard:
 
         # Hard-kill every worker process that existed at snapshot time.
         import signal as _signal
+
         for pid_or_proc in procs.values():
             # pid_or_proc is a multiprocessing.Process instance
             try:
-                pid_or_proc.kill()   # calls TerminateProcess on Windows
+                pid_or_proc.kill()  # calls TerminateProcess on Windows
             except Exception:  # noqa: BLE001
                 pass
             # Belt-and-suspenders: also kill by PID directly
             try:
                 pid = getattr(pid_or_proc, "pid", None)
                 if pid is not None:
-                    import os as _os
-                    _os.kill(pid, getattr(_signal, "SIGKILL", 9))
+                    os.kill(pid, getattr(_signal, "SIGKILL", 9))
             except Exception:  # noqa: BLE001
                 pass
 
@@ -2223,6 +2231,7 @@ def optimize_parameters_for_city(
     selected_data = self.get_selected_location_data()
     # ------- Guard: prevent concurrent optimizations -------
     _opt_btn = getattr(self, "optimize_settings_button", None)
+    _listbox = getattr(self, "city_listbox", None)
     if _opt_btn is not None:
         try:
             if str(_opt_btn.cget("state")) == "disabled":
@@ -2231,10 +2240,25 @@ def optimize_parameters_for_city(
         except Exception:  # noqa: BLE001
             _opt_btn = None
 
+    # Lock city list so user can't switch cities mid-optimization
+    self._single_city_opt_running = True
+    if _listbox is not None:
+        try:
+            _listbox.config(state="disabled")
+        except Exception:  # noqa: BLE001
+            pass
+
     def _restore_button():
+        """Re-enables the button AND the city listbox — always called on main thread."""
+        self._single_city_opt_running = False
         if _opt_btn is not None:
             try:
                 _opt_btn.config(state="normal", text="Optimize Parameters")
+            except Exception:  # noqa: BLE001
+                pass
+        if _listbox is not None:
+            try:
+                _listbox.config(state="normal")
             except Exception:  # noqa: BLE001
                 pass
 
@@ -2357,7 +2381,7 @@ def optimize_parameters_for_city(
                 else None
             )
             aux_ref_times, aux_dates = load_reference_times(
-                aux_ref_path, year=_aux_ref_year
+                Path(aux_ref_path), year=_aux_ref_year
             )
             if not aux_ref_times or not aux_dates:
                 continue

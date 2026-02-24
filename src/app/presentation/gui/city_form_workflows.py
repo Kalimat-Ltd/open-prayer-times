@@ -1,34 +1,15 @@
 """Add/modify city form construction and validation workflow methods."""
 
-import re
-import traceback
+# ruff: noqa: BLE001, SLF001
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 import csv
-import shutil
 import datetime
-import calendar
-import math
-from pathlib import Path
-from typing import Any, cast
-
-from src.app.config import LOC_CSV_PATH, REFERENCE_DIR, RESOURCES_DIR
-from src.app.presentation.gui.shared import (
-    _get_calculate_prayer_times,
-    _get_clock_offset_for_date,
-    _get_geopy_distance,
-    _get_open_batch_optimization_dashboard,
-    _get_optimize_parameters_for_city,
-    _get_pytz,
-    _lazy_imports,
-    _make_reference_folder_handler_class,
-    field_names,
-    rewrite_location_file,
-)
 
 
-def _create_city_form(self, parent_window, initial_data=None):
+def create_city_form(self, parent_window, initial_data=None):
     """Creates the labels and entry fields for the city form, including decimal coords and country code."""
     entries = {}
     string_vars = {}
@@ -37,7 +18,7 @@ def _create_city_form(self, parent_window, initial_data=None):
     outer_frame = ttk.Frame(parent_window)
     # Don't pack yet — caller may pack buttons at BOTTOM first
     # outer_frame will be packed via the returned frame reference
-    self._form_outer_frame = outer_frame
+    self.form_outer_frame = outer_frame
 
     canvas = tk.Canvas(outer_frame, highlightthickness=0)
     v_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
@@ -48,7 +29,7 @@ def _create_city_form(self, parent_window, initial_data=None):
     frame = ttk.Frame(canvas, padding="15")
     frame_window = canvas.create_window((0, 0), window=frame, anchor="nw")
 
-    def _on_frame_configure(event):
+    def _on_frame_configure(_event):
         canvas.configure(scrollregion=canvas.bbox("all"))
 
     def _on_canvas_configure(event):
@@ -68,7 +49,7 @@ def _create_city_form(self, parent_window, initial_data=None):
         if event.widget == parent_window:
             try:
                 canvas.unbind_all("<MouseWheel>")
-            except Exception:
+            except tk.TclError:
                 pass
 
     parent_window.bind("<Destroy>", _on_destroy)
@@ -83,7 +64,7 @@ def _create_city_form(self, parent_window, initial_data=None):
                 code = row["ISO CODES"].strip()
                 country = row["COUNTRY"].strip()
                 country_codes.append((code, country))
-    except Exception:
+    except (OSError, KeyError, csv.Error):
         country_codes = []
 
     def create_entry(field, row, trace_var=None, width=40, readonly=False):
@@ -233,7 +214,7 @@ def _create_city_form(self, parent_window, initial_data=None):
         "minutes": isha_minutes_var.get(),
     }
 
-    def update_method_fields(*args):
+    def update_method_fields(*_args):
         method = calculation_method_var.get()
         nonlocal angle_cache
         # Remove all dynamic widgets first
@@ -559,11 +540,11 @@ def open_add_city_window(self):
     add_window.geometry("750x700")
     add_window.transient(self.root)
     add_window.grab_set()
-    frame, entries, _ = self._create_city_form(add_window)
+    _frame, entries, _ = self.create_city_form(add_window)  # type: ignore[attr-defined]
     button_frame = ttk.Frame(add_window, padding=(15, 5))
     button_frame.pack(fill=tk.X, side=tk.BOTTOM)
-    if self._form_outer_frame is not None:
-        self._form_outer_frame.pack(expand=True, fill=tk.BOTH)
+    if self.form_outer_frame is not None:
+        self.form_outer_frame.pack(expand=True, fill=tk.BOTH)
     button_frame.columnconfigure(0, weight=1)
     button_frame.columnconfigure(1, weight=1)
     save_button = ttk.Button(
@@ -791,6 +772,6 @@ def _validate_and_get_form_data(
 
         return data
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         messagebox.showerror("Error", f"Validation error: {str(e)}", parent=window)
         return None

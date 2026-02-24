@@ -84,14 +84,14 @@ def open_modify_city_window(self):
     modify_window.geometry("750x700")
     modify_window.transient(self.root)
     modify_window.grab_set()
-    _frame, entries, string_vars = self._create_city_form(
+    _frame, entries, string_vars = self.create_city_form(
         modify_window, initial_data=selected_data
     )
     self._modify_string_vars = string_vars
     button_frame = ttk.Frame(modify_window, padding=(15, 5))
     button_frame.pack(fill=tk.X, side=tk.BOTTOM)
-    if self._form_outer_frame is not None:
-        self._form_outer_frame.pack(expand=True, fill=tk.BOTH)
+    if self.form_outer_frame is not None:
+        self.form_outer_frame.pack(expand=True, fill=tk.BOTH)
     modify_window.update()
     button_frame.columnconfigure(0, weight=1)
     button_frame.columnconfigure(1, weight=1)
