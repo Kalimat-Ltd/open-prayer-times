@@ -34,6 +34,7 @@ FIELD_NAMES = [
     "isha_offset",
     "is_official",
     "is_optimized",
+    "reference_year",
     "residual_corrections",
     "clock_offsets",
 ]

@@ -20,6 +20,7 @@ Primary city parameter dataset used by GUI, CLI, and runtime calculations.
 | Corrections | `residual_corrections`, `clock_offsets` |
 | Per-Prayer Offsets | `fajr_offset`, `shurooq_offset`, `dhuhr_offset`, `asr_offset`, `maghrib_offset`, `isha_offset` |
 | Flags | `is_official`, `is_optimized` |
+| Reference | `reference_year` |
 
 ### Field notes
 
@@ -30,8 +31,9 @@ Primary city parameter dataset used by GUI, CLI, and runtime calculations.
 - `isha_harag` — post-calculation Isha adjustment for locations where Isha would otherwise fall unreasonably late. Values: `0` = off (default), `1` = cap Isha at summer-solstice sunset + 65 min, `2` = take the earlier of 15° depression or one-seventh of night, `3` = hard cap Isha at 23:00 local
 - `high_lat_method` — which fallback to use when Fajr or Isha cannot be computed astronomically (sun doesn't reach the required angle): `0` = Angle-Based Fraction, `1` = One Seventh of Night, `2` = Midnight, `3` = Aqrab Al-Bilad (nearest-city transfer)
 - `high_lat_start_date` / `high_lat_end_date` — YYYY-MM-DD window during which `high_lat_method` is active. Outside this window, standard astronomical calculation is used
+- `reference_year` — the calendar year the reference prayer-time data was sourced from (e.g., `2025`). Reference text files use a `DD-Mon` date format with no embedded year, so a year must be supplied externally to construct full `datetime.date` keys. When set, this value is used by the optimizer, the conclusion-tab error summary, and the RMSE cache to load and evaluate reference data against the correct year's dates. When empty, the code falls back to the GUI display year (`year_var`) and then to today's year. You can set this value from the Modify City form
 - `residual_corrections` / `clock_offsets` — JSON payloads; see Section 3 below
-- Canonical column order is managed by GUI constants (`FIELD_NAMES` in the presentation layer)
+- Canonical column order is managed by GUI constants (`FIELD_NAMES` in `src/app/presentation/gui/constants.py`, 37 fields total)
 - Many values may be empty/nullable in the source CSV and are normalized to sensible defaults at runtime
 
 ## 2) Reference text files
@@ -44,7 +46,19 @@ Expected row format: tab-separated, 7 columns:
 date\tfajr\tshurooq\tdhuhr\tasr\tmaghrib\tisha
 ```
 
-Parsing and normalization are handled by infrastructure reference parsing utilities.
+Parsing and normalization are handled by `src/app/infrastructure/reference_parser.py` (`load_reference_file`) and the thin `reference_repository.py` wrapper (`load_reference_times`). Both accept an optional `year` parameter.
+
+### Date format and year resolution
+
+The standard date column format is `DD-Mon` (e.g., `01-Jan`, `15-Mar`). This format carries no year information. The parser also recognizes `DD/MM`, `MM/DD`, `YYYY-MM-DD`, and `DD-MM-YYYY` as fallback formats; the last two are self-documenting.
+
+For `DD-Mon` rows, the parser assigns the supplied `year` parameter to every parsed date. If `year` is `None`, it falls back to `datetime.date.today().year`. This means:
+
+- if you load the same reference file with `year=2024` vs. `year=2025`, you get different `datetime.date` keys
+- prayer times are slightly different for the same calendar day across years (different day of week, leap-day presence, etc.)
+- using the wrong year causes a small but measurable increase in MAE when comparing calculated times against reference times
+
+See `reference_year` in `loc.csv` (Section 1) for how this value is stored and used.
 
 ### Adding new reference data
 
@@ -55,7 +69,7 @@ Manual workflow:
 1. Create country folder if needed: `reference/<COUNTRY_CODE>/`
 2. Create file name in lowercase country_city style (for example: `country_city.txt`)
 3. Add one row per day with **exactly** 7 tab-separated fields:
-  - `date`, `fajr`, `shurooq`, `dhuhr`, `asr`, `maghrib`, `isha`
+    - `date`, `fajr`, `shurooq`, `dhuhr`, `asr`, `maghrib`, `isha`
 4. Keep time values in local civil time for the target city
 5. Keep prayer labels aligned to project naming (`shurooq`, not `sunrise`)
 
@@ -80,6 +94,8 @@ Different organizations may use different conventions, so consistency within a c
 
 Some reference datasets shift all prayer times by a constant amount during certain date ranges (common causes: DST transitions that the reference source applied but the astronomical engine does not, or systematic rounding conventions that differ between periods). Stage 1 detects these shifts automatically.
 
+> **Note on DST and `reference_year`:** DST-driven clock offsets are only necessary when the calculator's UTC-offset computation disagrees with the reference source's DST assumptions. When `reference_year` is set correctly, `pytz` resolves DST transitions using the actual dates of the reference year, so the calculator's offsets already match what the reference source used — and no `clock_offsets` block is needed for those periods. If you find a city has a spurious summer-time `clock_offsets` block, check that `reference_year` is set to the correct year before assuming the offset is real.
+
 Serialized JSON: array of date-window blocks.
 
 ```json
@@ -99,31 +115,6 @@ After Stage 1's structural fit and Stage 2's high-latitude adaptation, some date
 
 The JSON payload is written and read by `PrayerResidualModel`'s serialization methods. You should not edit it by hand; the optimizer produces it automatically and the calculator consumes it at runtime. The payload includes harmonic coefficients, active date ranges, and versioning metadata.
 
-## 4) Generated CSVs under `data/`
-
-### Why these exist (instead of always calculating on the fly)
-
-The GUI and CLI calculate prayer times on the fly for a single city/date — that's fast enough for interactive use. But some workflows need to operate on many cities × many dates at once:
-
-- **Batch comparison and benchmarking** — comparing calculated vs. reference times across hundreds of cities and thousands of dates. Doing this on the fly each time would be slow and redundant
-- **Reproducibility** — a CSV snapshot captures the exact state of reference data or calculations at a point in time, making reports and regression checks repeatable
-
-### What each file contains
-
-| File | Columns | Purpose |
-|------|---------|--------|
-| `reference_times.csv` | `year, month, day, city, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, lat, long, area` | Normalized raw reference data. Keeps the original city file name as the `city` column. This is the closest representation to the source truth before any mapping. |
-| `all_times.csv` | `year, month, day, Fajr, Shurooq, Duhur, Asr, Magrib, Isha, city_id` | Mapped dataset: each row is linked to a `loc.csv` city by numeric `city_id`. Raw text fields (`city`, `lat`, `long`, `area`) are removed. This is the file used by downstream analysis scripts that need to join reference times with city parameters. |
-
-### Why three files instead of one
-
-Each file represents a different stage in the data pipeline:
-
-1. **`reference_times.csv`** = raw parsed reference (stage: ingestion)
-2. **`all_times.csv`** = mapped and ID-linked reference (stage: preparation for analysis)
-
-Merging them into a single file would mix input data with output data, make schema changes harder, and increase the risk of accidentally corrupting source truth with calculated values.
-
-## 5) Test fixtures
+## 4) Test fixtures
 
 Fixtures live under `tests/fixtures/` and provide deterministic baseline inputs/outputs for regression tests.

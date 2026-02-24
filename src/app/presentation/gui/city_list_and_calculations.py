@@ -264,9 +264,9 @@ def _search_candidate_ids(self, filter_text):
     return matched if matched is not None else set(self.city_name_lookup.keys())
 
 
-def _parse_reference_file_all_dates(filepath):
+def _parse_reference_file_all_dates(filepath, year=None):
     ref_by_date = {}
-    current_year = datetime.date.today().year
+    current_year = int(year) if year else datetime.date.today().year
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             parts = line.strip().split("\t")
@@ -349,7 +349,9 @@ def _compute_city_rmse_from_reference(self, location_data):
         return None, None, 0
 
     try:
-        reference_times = _parse_reference_file_all_dates(ref_file)
+        reference_times = _parse_reference_file_all_dates(
+            ref_file, year=location_data.get("reference_year")
+        )
     except Exception:
         return None, None, 0
 
@@ -739,7 +741,13 @@ def get_selected_location_data(self):
     selection_indices = self.city_listbox.curselection()
     if not selection_indices:
         return None
-    selected_id = self.city_listbox_ids[selection_indices[0]]
+    idx = selection_indices[0]
+    # Guard: curselection() can hold a stale index if the listbox was
+    # repopulated (e.g. filter changed) while it was disabled — the old
+    # selection index may now exceed the new city_listbox_ids length.
+    if idx >= len(self.city_listbox_ids):
+        return None
+    selected_id = self.city_listbox_ids[idx]
     for location in self.locations_data:
         if location["id"] == selected_id:
             return location
@@ -754,8 +762,14 @@ def disable_action_buttons(self):
 
 
 def enable_action_buttons(self):
-    """Enables buttons that require a selection."""
-    self.optimize_settings_button.config(state=tk.NORMAL)
+    """Enables modify/delete buttons that require a selection.
+
+    The optimize button is intentionally NOT set here — its state is owned
+    exclusively by on_city_select (gated on whether a reference file exists)
+    and by the single-city optimization guard (_single_city_opt_running).
+    Setting it here would override those guards and accidentally enable it
+    for cities that have no reference data.
+    """
     self.modify_button.config(state=tk.NORMAL)
     self.delete_button.config(state=tk.NORMAL)
 
@@ -798,10 +812,12 @@ def on_city_select(self, event):
             self.city_listbox.see(idx)
             break
     ref_file = self._get_reference_file_path(selected_data)
-    if ref_file and os.path.exists(ref_file):
-        self.optimize_settings_button.config(state=tk.NORMAL)
-    else:
-        self.optimize_settings_button.config(state=tk.DISABLED)
+    _opt_running = getattr(self, "_single_city_opt_running", False)
+    if not _opt_running:
+        if ref_file and os.path.exists(ref_file):
+            self.optimize_settings_button.config(state=tk.NORMAL)
+        else:
+            self.optimize_settings_button.config(state=tk.DISABLED)
     self.enable_action_buttons()
     if selected_data.get("timezone_name"):
         self.dst_var.set(False)
@@ -835,12 +851,14 @@ def calculate_and_display_prayer_times(self, location_data):
         tz_name = location_data["timezone"] if self.dst_var.get() else None
         tz = _get_pytz().timezone(location_data["timezone"])
         today = datetime.date.today()
-        dt = datetime.datetime(today.year, today.month, today.day, 12)
-        tz_offset_hours = tz.utcoffset(dt).total_seconds() / 3600.0
 
-        # Month/year
-        year = today.year
+        # Month/year — use user-selected year (year_var), fall back to today's year
+        year = getattr(self, "year_var", None)
+        year = int(year.get()) if year is not None else today.year
         month = self.month_var.get()
+
+        dt = datetime.datetime(year, month, 1, 12)
+        tz_offset_hours = tz.utcoffset(dt).total_seconds() / 3600.0
         num_days = calendar.monthrange(year, month)[1]
 
         # Reference times
@@ -1078,7 +1096,8 @@ def copy_times_to_clipboard(self):
             raise ValueError("Invalid DMS coordinates, cannot calculate.")
 
         # Get current year and selected month
-        year = datetime.date.today().year
+        year = getattr(self, "year_var", None)
+        year = int(year.get()) if year is not None else datetime.date.today().year
         month = self.month_var.get()
         num_days = calendar.monthrange(year, month)[1]
 
@@ -1093,8 +1112,7 @@ def copy_times_to_clipboard(self):
 
         # Calculate tz_offset_hours from timezone string
         tz = _get_pytz().timezone(selected_data["timezone"])
-        today = datetime.date.today()
-        dt = datetime.datetime(today.year, today.month, today.day, 12, 0, 0)
+        dt = datetime.datetime(year, month, 1, 12, 0, 0)
         tz_offset_hours = tz.utcoffset(dt).total_seconds() / 3600.0
 
         # Load residual correction model (if fitted)

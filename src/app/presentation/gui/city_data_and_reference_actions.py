@@ -84,14 +84,14 @@ def open_modify_city_window(self):
     modify_window.geometry("750x700")
     modify_window.transient(self.root)
     modify_window.grab_set()
-    _frame, entries, string_vars = self._create_city_form(
+    _frame, entries, string_vars = self.create_city_form(
         modify_window, initial_data=selected_data
     )
     self._modify_string_vars = string_vars
     button_frame = ttk.Frame(modify_window, padding=(15, 5))
     button_frame.pack(fill=tk.X, side=tk.BOTTOM)
-    if self._form_outer_frame is not None:
-        self._form_outer_frame.pack(expand=True, fill=tk.BOTH)
+    if self.form_outer_frame is not None:
+        self.form_outer_frame.pack(expand=True, fill=tk.BOTH)
     modify_window.update()
     button_frame.columnconfigure(0, weight=1)
     button_frame.columnconfigure(1, weight=1)
@@ -242,6 +242,7 @@ def apply_to_country(self, entries, original_data, window):
         new_isha_offset = form_angles["isha_offset"]
         new_is_official = form_angles["is_official"]
         new_is_optimized = form_angles["is_optimized"]
+        new_reference_year = form_angles.get("reference_year", "")
         new_residual_corrections = form_angles["residual_corrections"]
         new_clock_offsets = form_angles["clock_offsets"]
         # 3. Find affected cities by country code
@@ -279,6 +280,7 @@ def apply_to_country(self, entries, original_data, window):
             f"    Asr: {new_asr_offset}\n"
             f"    Maghrib: {new_maghrib_offset}\n"
             f"    Isha: {new_isha_offset}\n\n"
+            f"  Reference Year: {new_reference_year if new_reference_year else 'not set'}\n\n"
             f"to ALL {len(affected_cities)} cities with country code '{current_country_code}'.\n\n"
             f"Proceed?"
         )
@@ -328,6 +330,7 @@ def apply_to_country(self, entries, original_data, window):
                     "residual_corrections"
                 ] = new_residual_corrections
                 self.locations_data[i]["clock_offsets"] = new_clock_offsets
+                self.locations_data[i]["reference_year"] = new_reference_year
                 updated_city_ids.append(self.locations_data[i].get("id"))
                 update_count += 1
         # 5. Save and provide feedback

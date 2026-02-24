@@ -3,13 +3,15 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
-def load_reference_file(filepath: Path) -> Tuple[Dict, List]:
+def load_reference_file(
+    filepath: Path | str, year: int | None = None
+) -> Tuple[Dict, List]:
     all_reference_times = {}
     available_dates = []
-    current_year = datetime.date.today().year
+    current_year = year if year is not None else datetime.date.today().year
 
     try:
-        with filepath.open("r", encoding="utf-8") as file_obj:
+        with Path(filepath).open("r", encoding="utf-8") as file_obj:
             for line in file_obj:
                 parts = line.strip().split("\t")
                 if len(parts) != 7:
