@@ -178,4 +178,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
