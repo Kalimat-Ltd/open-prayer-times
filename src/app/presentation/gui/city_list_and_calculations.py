@@ -756,11 +756,14 @@ def disable_action_buttons(self):
 
 
 def enable_action_buttons(self):
-    """Enables buttons that require a selection."""
-    # Never re-enable the optimize button while a single-city optimization
-    # is in progress — the subprocess guard owns that button's state.
-    if not getattr(self, "_single_city_opt_running", False):
-        self.optimize_settings_button.config(state=tk.NORMAL)
+    """Enables modify/delete buttons that require a selection.
+
+    The optimize button is intentionally NOT set here — its state is owned
+    exclusively by on_city_select (gated on whether a reference file exists)
+    and by the single-city optimization guard (_single_city_opt_running).
+    Setting it here would override those guards and accidentally enable it
+    for cities that have no reference data.
+    """
     self.modify_button.config(state=tk.NORMAL)
     self.delete_button.config(state=tk.NORMAL)
 
