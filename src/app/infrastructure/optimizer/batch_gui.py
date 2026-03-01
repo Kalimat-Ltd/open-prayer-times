@@ -1213,7 +1213,7 @@ class BatchOptimizationDashboard:
             height=6,
             wrap=tk.WORD,
             state=tk.DISABLED,
-            font=("Consolas", 9),
+            font=("Courier New", 9),
         )
         self.details_text.pack(fill=tk.X)
 

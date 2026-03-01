@@ -33,7 +33,13 @@ def __init__(self, root):
     _lazy_imports()
     self.root = root
     self.root.title("Open Prayer Times")
-    self.root.geometry("1920x1080")
+    # Maximize window in a cross-platform way
+    import sys as _sys
+
+    if _sys.platform.startswith("linux"):
+        self.root.attributes("-zoomed", True)
+    else:  # Windows and macOS both honour state('zoomed') with Tk 8.6+
+        self.root.state("zoomed")
 
     self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -197,18 +203,16 @@ def create_widgets(self):
         font_frame.grid(row=row, column=0, sticky="e")
 
         def change_font_size(delta):
-            current_font = target_widget["font"]
-            size = 12  # Default size
-            family = "Courier New"  # Default family
+            import tkinter.font as _tkfont
 
-            if isinstance(current_font, str):
-                match = re.match(r"\{(.+)\}\s+(\d+)", current_font)
-                if match:
-                    family = match.group(1)
-                    size = int(match.group(2))
-            else:
-                family, size = current_font
-            new_size = max(8, min(24, int(size) + delta))
+            try:
+                f = _tkfont.Font(font=target_widget["font"])
+                family = f.actual("family")
+                size = abs(f.actual("size"))  # negative = pixels, positive = points
+            except Exception:
+                family = "Courier New"
+                size = 12
+            new_size = max(8, min(24, size + delta))
             target_widget.configure(font=(family, new_size))
 
         decrease_btn = ttk.Button(

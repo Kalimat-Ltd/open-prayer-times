@@ -587,8 +587,12 @@ def _open_reference_file(self, filepath):
             os.startfile(filepath)
         else:
             import subprocess
+            import sys
 
-            subprocess.run(["xdg-open", filepath], check=False)
+            if sys.platform == "darwin":  # macOS
+                subprocess.run(["open", filepath], check=False)
+            else:  # Linux
+                subprocess.run(["xdg-open", filepath], check=False)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to open reference file:\n{e}")
 
@@ -608,8 +612,12 @@ def _create_reference_file(self, filepath):
             os.startfile(filepath)
         else:  # Unix-like
             import subprocess
+            import sys
 
-            subprocess.run(["xdg-open", filepath], check=False)
+            if sys.platform == "darwin":  # macOS
+                subprocess.run(["open", filepath], check=False)
+            else:  # Linux
+                subprocess.run(["xdg-open", filepath], check=False)
 
         # Refresh the display
         self.refresh_country_filter()  # <-- Refresh country filter to update '*' marker

@@ -916,7 +916,7 @@ def calculate_and_display_prayer_times(self, location_data):
         # Generate rows
         for day in range(1, num_days + 1):
             current_date = datetime.date(year, month, day)
-            date_str = current_date.strftime("%#d-%b")
+            date_str = f"{day}-{current_date.strftime('%b')}"
 
             # Insert date
             self.prayer_times_text.insert(tk.END, f"{date_str:<{date_width}}")
