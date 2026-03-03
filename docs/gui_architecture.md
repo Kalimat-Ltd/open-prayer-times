@@ -127,7 +127,7 @@ At the bottom, a status bar shows three counters:
 2. The dashboard automatically discovers all countries that have both reference data files and matching city entries in `loc.csv`
 3. A table shows each country with columns: Run (enable checkbox), Apply (checkbox), Country, Code, Ref Cities, Status, MAE Before, MAE After, Change, Time
 4. Controls:
-   - **Start All** — begins sequential optimization of all enabled countries. Each country is processed in a background thread; the UI remains responsive
+   - **Start All** — begins optimization of all enabled countries using a configurable multiprocessing pool; multiple cities across multiple countries are processed simultaneously. The worker count is user-configurable. The UI remains responsive
    - **Stop** — signals the current run to stop after the active country completes
    - **Enable All / Disable All** — toggle the Run checkbox for all unprocessed countries
    - **Select All Improved / Deselect All** — toggle Apply checkboxes for completed countries
@@ -207,7 +207,7 @@ The city list displays live error metrics (MAE, RMSE, sample count N) next to ea
 Both single-city and batch optimization are implemented in `src/app/infrastructure/optimizer/batch_gui.py`:
 
 - **`optimize_parameters_for_city(self, ref_file)`** — called from the GUI's **Optimize Parameters** button. Loads reference data, computes baseline error, runs `run_multistage_optimization`, computes after-error, shows the results dialog, and applies based on user choice
-- **`open_batch_optimization_dashboard(app)`** — opens the `BatchOptimizationDashboard` toplevel window. Country discovery, sequential background optimization, before/after comparison, and batch apply logic are all handled within this class
+- **`open_batch_optimization_dashboard(app)`** — opens the `BatchOptimizationDashboard` toplevel window. Country discovery, multiprocessing-based parallel optimization (with configurable worker count), before/after comparison, and batch apply logic are all handled within this class
 
 ## Data Flow
 

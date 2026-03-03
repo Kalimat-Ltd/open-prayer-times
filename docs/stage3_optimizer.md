@@ -58,7 +58,6 @@ Residual corrections are accepted only when:
 - The unstable-date MAE improves by at least `min_residual_mae_gain` minutes
 - No individual prayer deteriorates on unstable dates by more than `max_unstable_per_prayer_worsen` minutes
 - Each prayer improves on unstable dates by at least `min_unstable_per_prayer_gain` minutes
-- Stable-date accuracy is not significantly degraded (checked via before/after stable MAE comparison)
 
 Application scope guarantee:
 

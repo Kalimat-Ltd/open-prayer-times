@@ -19,14 +19,18 @@ This page defines the key parameters and concepts used across calculation and op
 
 - `calculation_method`:
   Main astronomical mode. Runtime normalized values are:
-  - `angle_based`
-  - `moonsighting`
+  - `angle_based` — uses fixed solar depression angles (e.g. 18° for Fajr, 17° for Isha) throughout the year, regardless of latitude or season. The specific angles are city-specific parameters fitted by the optimizer.
+  - `moonsighting` — uses the [Moonsighting.com](https://www.moonsighting.com) method, which derives Fajr and Isha from empirical twilight observations curve-fitted into formulas that are functions of *latitude and season* rather than a single fixed angle. Despite the name, this is a calculation method — not traditional naked-eye moon observation. At the equator the effective angle is roughly 18°, but it varies continuously as latitude and day-of-year change. At latitudes between 55°–60° where a fixed angle would produce hardship times, the method automatically applies a one-seventh-of-night rule. Above 60°, calculations are anchored to the equivalent of 60° latitude. The shafaq variant (red *Ahmer* vs. white *Abyad* twilight for Isha) is also selected seasonally by default rather than being fixed by madhab alone.
+
 - `asr_madhab`:
   Asr juristic mode:
   - `0` = Standard
   - `1` = Hanafi
 - `isha_shafaq`:
-  Moonsighting twilight variant (`general`, `ahmer`, `abyad`).
+  Moonsighting twilight variant — only meaningful when `calculation_method` is `moonsighting`. Controls which twilight criterion defines the end of Isha:
+  - `ahmer` — red twilight (Shafaq Ahmer); preferred by Shafi'i, Maliki, Hanbali
+  - `abyad` — white twilight (Shafaq Abyad); preferred by Hanafi
+  - `general` — seasonal blend: Ahmer in summer (short nights), Abyad in winter, with Abyad→Ahmer transition in spring and reverse in autumn. Used to avoid hardship at higher latitudes where Abyad would give an unreasonably late Isha in summer.
 
 ## 3) High-Latitude Parameters
 
