@@ -14,7 +14,7 @@ dependencies = [
   "geopy==2.4.1",
   "numpy>=1.24.0",
   "pyephem==9.99",
-  "pytz==2025.2",
+  "pytz==2026.1.post1",
   "scipy>=1.11.0",
   "timezonefinder==6.5.9",
   "watchdog==6.0.0",
