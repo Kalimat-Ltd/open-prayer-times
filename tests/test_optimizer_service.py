@@ -18,18 +18,18 @@ class TestOptimizerService(unittest.TestCase):
         fixture_path = REPO_ROOT / "tests" / "fixtures" / "parity_matrix.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         self.reference_file = REPO_ROOT / fixture["reference_file"]
-        self.loc_csv = REPO_ROOT / "resources" / "locations.csv"
+        self.locations_csv_path = REPO_ROOT / "resources" / "locations.csv"
         self.city_name = "Russia, Kazan"
 
     def test_optimizer_service_matches_native_estimator(self):
         service_estimate = estimate_city_angles_from_reference(
             city_name=self.city_name,
             reference_file=self.reference_file,
-            loc_csv_path=self.loc_csv,
+            loc_csv_path=self.locations_csv_path,
             timezone_offset_hours=3,
         )
 
-        repository = CsvLocationRepository(self.loc_csv)
+        repository = CsvLocationRepository(self.locations_csv_path)
         city = repository.get_by_name(self.city_name)
         reference_times, available_dates = load_reference_times(self.reference_file)
 
