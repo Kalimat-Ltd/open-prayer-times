@@ -1,5 +1,5 @@
 # pylint: disable=broad-exception-caught,protected-access,unused-argument
-"""CSV persistence helpers for safe loc.csv rewrite with backup/restore semantics."""
+"""CSV persistence helpers for safe locations.csv rewrite with backup/restore semantics."""
 
 import csv
 import os

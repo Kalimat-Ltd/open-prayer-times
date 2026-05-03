@@ -20,7 +20,7 @@ class TestCityDayService(unittest.TestCase):
         direct = calculate_city_day_from_loc_csv(
             city_name=city_name,
             target_date=target_date,
-            loc_csv_path=REPO_ROOT / "loc.csv",
+            loc_csv_path=REPO_ROOT / "resources" / "locations.csv",
         )
 
         self.assertEqual(wrapped.times, direct.times)

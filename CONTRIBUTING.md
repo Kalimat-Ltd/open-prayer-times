@@ -22,7 +22,7 @@ python -m pytest tests/ -q
 - Keep changes focused and minimal
 - Follow existing module boundaries (domain / application / infrastructure / presentation)
 - Prefer explicit, readable logic over hidden side effects
-- Preserve data format compatibility (`loc.csv`, reference files) unless a migration is provided
+- Preserve data format compatibility (`locations.csv`, reference files) unless a migration is provided
 
 ## Optimizer Changes
 

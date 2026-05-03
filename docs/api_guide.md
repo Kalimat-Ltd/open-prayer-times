@@ -15,9 +15,9 @@ Parameters:
 
 | Name | Type | Description |
 |------|------|-------------|
-| `city_name` | `str` | Location name as in `loc.csv` |
+| `city_name` | `str` | Location name as in `locations.csv` |
 | `reference_file` | `Path` | Path to reference prayer-time file |
-| `loc_csv_path` | `Path` | Path to `loc.csv` |
+| `loc_csv_path` | `Path` | Path to `locations.csv` |
 | `timezone_offset_hours` | `float` | UTC offset hours |
 | `tz_name` | `str | None` | IANA timezone name |
 
@@ -30,9 +30,9 @@ Parameters:
 
 | Name | Type | Description |
 |------|------|-------------|
-| `city_name` | `str` | Location name as in `loc.csv` |
+| `city_name` | `str` | Location name as in `locations.csv` |
 | `reference_file` | `Path` | Path to reference prayer-time file |
-| `loc_csv_path` | `Path` | Path to `loc.csv` |
+| `loc_csv_path` | `Path` | Path to `locations.csv` |
 | `timezone_offset_hours` | `float` | UTC offset hours |
 
 Returns: `Optional[Tuple[float, float]]` — `(fajr_angle, isha_angle)` or `None` if estimation fails.
@@ -40,15 +40,15 @@ Returns: `Optional[Tuple[float, float]]` — `(fajr_angle, isha_angle)` or `None
 ### `calculate_city_day_from_loc_csv`
 
 - Module: `src/app/application/use_cases.py`
-- Purpose: compute one city-day's prayer times using the parameters stored in `loc.csv`. This is the same calculation the GUI performs when you click on a city
+- Purpose: compute one city-day's prayer times using the parameters stored in `locations.csv`. This is the same calculation the GUI performs when you click on a city
 
 Parameters:
 
 | Name | Type | Description |
 |------|------|-------------|
-| `city_name` | `str` | Location name as in `loc.csv` |
+| `city_name` | `str` | Location name as in `locations.csv` |
 | `target_date` | `datetime.date` | The date to calculate for |
-| `loc_csv_path` | `Path` | Path to `loc.csv` |
+| `loc_csv_path` | `Path` | Path to `locations.csv` |
 
 Returns: `PrayerCalculationResult` — a dataclass with a `.times` dict (keys: `fajr`, `shurooq`, `dhuhr`, `asr`, `maghrib`, `isha`), a `.method_used` dict, and an optional `.error` string.
 
@@ -110,7 +110,7 @@ from src.app.application.optimization_use_case import optimize_city_from_referen
 result = optimize_city_from_reference(
     city_name="Egypt, Cairo",
     reference_file=Path("reference/EG/egypt_cairo.txt"),
-    loc_csv_path=Path("loc.csv"),
+    loc_csv_path=Path("resources/locations.csv"),
     timezone_offset_hours=2,
 )
 

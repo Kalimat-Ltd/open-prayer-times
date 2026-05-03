@@ -688,10 +688,10 @@ def _parse_location_row(self, row, row_num):
 
 
 def load_locations(self):
-    """Loads location data from loc.txt."""
+    """Loads location data from resources/locations.csv."""
     # (Keep the existing loading logic)
     self.locations_data = []
-    # Use loc.csv as the new location file and DictReader for named access
+    # Use locations.csv as the new location file and DictReader for named access
     self.location_file = str(LOC_CSV_PATH)
     if not os.path.exists(self.location_file):
         messagebox.showwarning(

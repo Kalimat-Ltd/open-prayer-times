@@ -1,4 +1,4 @@
-"""Canonical loc.csv field ordering shared by gui read/write workflows."""
+"""Canonical locations.csv field ordering shared by gui read/write workflows."""
 
 FIELD_NAMES = [
     "id",

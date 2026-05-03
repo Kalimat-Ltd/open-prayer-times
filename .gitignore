@@ -177,3 +177,6 @@ cython_debug/
 /reports
 /tools
 resources/city_indexes.sqlite3
+
+# macOS
+.DS_Store
