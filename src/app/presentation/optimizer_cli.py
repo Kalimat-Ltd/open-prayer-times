@@ -10,7 +10,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Open Prayer Times — run optimization for one city"
     )
-    parser.add_argument("--city", required=True, help="Location name from loc.csv")
+    parser.add_argument("--city", required=True, help="Location name from locations.csv")
     parser.add_argument(
         "--reference-file",
         required=True,

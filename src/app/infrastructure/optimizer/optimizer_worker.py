@@ -29,7 +29,7 @@ def _reset_stage1_defaults(loc_dict: dict) -> dict:
 
     Mirrors the identical function in batch_gui.py so that both the single-
     city GUI flow and the batch flow start from the same clean slate,
-    independent of whatever is currently saved in loc.csv.
+    independent of whatever is currently saved in locations.csv.
     """
     loc_dict["optimized_lat"] = None
     loc_dict["optimized_lon"] = None

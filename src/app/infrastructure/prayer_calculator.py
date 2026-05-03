@@ -6,6 +6,7 @@ import datetime
 import csv
 import os
 import ephem
+from src.app.config import LOC_CSV_PATH
 import pytz  # For timezone handling
 
 # --- Constants ---
@@ -682,9 +683,9 @@ def closest_city_fallback(
     Prints the chosen city and its coordinates.
     Returns (fajr, shurooq, dhuhr, asr, maghrib, isha) as UTC time strings (HH:MM:SS) or raises if none found.
     """
-    loc_file = os.path.join(os.path.dirname(__file__), "loc.csv")
+    loc_file = str(LOC_CSV_PATH)
     if not os.path.exists(loc_file):
-        raise RuntimeError("loc.csv not found, cannot fallback to a city.")
+        raise RuntimeError("locations.csv not found, cannot fallback to a city.")
     preferred = []
     all_cities = []
     with open(loc_file, encoding="utf-8") as f:

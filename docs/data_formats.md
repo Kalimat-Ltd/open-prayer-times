@@ -4,7 +4,7 @@
 
 For parameter meaning (angles, high-lat fields, offsets, residuals), see [parameter_glossary.md](parameter_glossary.md).
 
-## 1) `loc.csv`
+## 1) `locations.csv`
 
 Primary city parameter dataset used by GUI, CLI, and runtime calculations.
 
@@ -58,7 +58,7 @@ For `DD-Mon` rows, the parser assigns the supplied `year` parameter to every par
 - prayer times are slightly different for the same calendar day across years (different day of week, leap-day presence, etc.)
 - using the wrong year causes a small but measurable increase in MAE when comparing calculated times against reference times
 
-See `reference_year` in `loc.csv` (Section 1) for how this value is stored and used.
+See `reference_year` in `locations.csv` (Section 1) for how this value is stored and used.
 
 ### Adding new reference data
 

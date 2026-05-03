@@ -28,7 +28,7 @@ def test_al_aqabah_multistage_post_eval_uses_optimized_elevation():
     multistage output. Using the original city elevation can artificially
     inflate MAE/RMSE (especially sunrise/sunset-dependent prayers).
     """
-    repository = CsvLocationRepository(REPO_ROOT / "loc.csv")
+    repository = CsvLocationRepository(REPO_ROOT / "resources" / "locations.csv")
     city = repository.get_by_name("Jordan, Al `Aqabah")
 
     reference_file = REPO_ROOT / "reference" / "JO" / "jordan_al_`aqabah.txt"

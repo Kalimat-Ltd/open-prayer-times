@@ -77,7 +77,7 @@ At high latitudes (roughly above 48°), the sun may not dip far enough below the
 ## 5.5) Reference Year
 
 - `reference_year`:
-  The calendar year the reference prayer-time data for a city was most likely sourced from (e.g., `2025`). Stored as an integer string in `loc.csv`.
+  The calendar year the reference prayer-time data for a city was most likely sourced from (e.g., `2025`). Stored as an integer string in `locations.csv`.
 
   Reference files use a `DD-Mon` date format with no embedded year. The parser must inject a year to construct `datetime.date` keys. Using the wrong year introduces a systematic error because solar geometry differs slightly from year to year (different weekday alignment, leap-year presence, etc.).
 
@@ -86,7 +86,7 @@ At high latitudes (roughly above 48°), the sun may not dip far enough below the
   - `year_var` — the year the user has selected in the GUI's Year spinbox; used for displaying calculated prayer times and as a fallback when `reference_year` is not set
 
   Priority order when the code needs a year for reference-data comparisons:
-  1. `reference_year` from the city's `loc.csv` row (most accurate)
+  1. `reference_year` from the city's `locations.csv` row (most accurate)
   2. `year_var` from the GUI display spinbox
   3. `datetime.date.today().year` (last resort)
 

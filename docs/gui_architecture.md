@@ -47,7 +47,7 @@ Three tabs (notebook widget):
 3. **Conclusion** — shows a detailed per-month and per-prayer error summary comparing calculated times against reference data. The table includes unsigned and signed average errors per prayer per month, total errors, most/least accurate months, and overall averages. This calculation takes into account constant offsets, residual corrections, and clock-offset adjustments
 
    The year used for this computation follows a priority chain:
-   1. The city's `reference_year` from `loc.csv` (the year the reference data was collected)
+   1. The city's `reference_year` from `locations.csv` (the year the reference data was collected)
    2. The GUI display year (`year_var`, set in the Year spinbox)
    3. `datetime.date.today().year`
 
@@ -90,7 +90,7 @@ At the bottom, a status bar shows three counters:
    - Is Optimized checkbox
    - **Reference Year** spinbox — the year the reference data was sourced from. Used by the optimizer, conclusion tab, and RMSE cache to load reference dates in the correct year context. Set this to the year that matches the reference data for the city. Leave empty if the reference year is unknown
    - Advanced JSON fields: Residual Corrections, Clock Offsets (scrollable text boxes)
-3. Click **Save City** to persist. The city is appended to `loc.csv`
+3. Click **Save City** to persist. The city is appended to `locations.csv`
 
 ### Modify an existing city
 
@@ -119,19 +119,19 @@ At the bottom, a status bar shows three counters:
    - **Apply to City** — applies the optimized parameters to the selected city only (including optimized coordinates)
    - **Apply to Country** — applies optimized parameters (angles, offsets, corrections, etc.) to all cities with the same country code. Only the selected city gets optimized coordinates
    - **Ignore** — discards the optimization result
-5. After applying, `loc.csv` is rewritten, the RMSE cache is updated, and the city list refreshes
+5. After applying, `locations.csv` is rewritten, the RMSE cache is updated, and the city list refreshes
 
 ### Batch country optimization
 
 1. Click **Optimize All Countries** to open the Batch Optimization Dashboard
-2. The dashboard automatically discovers all countries that have both reference data files and matching city entries in `loc.csv`
+2. The dashboard automatically discovers all countries that have both reference data files and matching city entries in `locations.csv`
 3. A table shows each country with columns: Run (enable checkbox), Apply (checkbox), Country, Code, Ref Cities, Status, MAE Before, MAE After, Change, Time
 4. Controls:
    - **Start All** — begins optimization of all enabled countries using a configurable multiprocessing pool; multiple cities across multiple countries are processed simultaneously. The worker count is user-configurable. The UI remains responsive
    - **Stop** — signals the current run to stop after the active country completes
    - **Enable All / Disable All** — toggle the Run checkbox for all unprocessed countries
    - **Select All Improved / Deselect All** — toggle Apply checkboxes for completed countries
-   - **Apply Selected** — writes optimization results to `loc.csv` for all countries with the Apply checkbox checked
+   - **Apply Selected** — writes optimization results to `locations.csv` for all countries with the Apply checkbox checked
 5. For each country, the dashboard:
    - Runs `run_multistage_optimization` independently for every city that has reference data
    - Computes before/after MAE and RMSE (per-country aggregate)
@@ -179,7 +179,7 @@ This allows the GUI code to be split into focused, maintainable modules while pr
 | `city_form_workflows.py` | `create_city_form` (scrollable form with dynamic field visibility based on calculation method and high-lat method, including the Reference Year spinbox), `open_add_city_window`, `open_modify_city_window`, `validate_and_get_form_data` |
 | `city_data_and_reference_actions.py` | `save_new_city`, `save_modified_city`, `apply_to_country`, `delete_selected_city` — city CRUD with CSV persistence, country-wide parameter propagation |
 | `summary_and_status_views.py` | `show_conclusion_summary` (per-month per-prayer error analysis with residual and clock-offset accounting, reference-year-aware date loading), `update_status_bar` (optimization coverage statistics) |
-| `constants.py` | `FIELD_NAMES` — canonical `loc.csv` column order (37 fields) |
+| `constants.py` | `FIELD_NAMES` — canonical `locations.csv` column order (37 fields) |
 | `deps.py` | Lazy dependency loader for heavy runtime imports (TimezoneFinder, geopy, watchdog, pytz, prayer calculator, optimizer functions) |
 | `shared.py` | Wiring helpers re-exporting lazy-loaded dependencies and the `ReferenceFolderHandler` class |
 | `clock.py` | `get_clock_offset_for_date` — applies per-date reference clock-shift offset from JSON blocks |
@@ -211,7 +211,7 @@ Both single-city and batch optimization are implemented in `src/app/infrastructu
 
 ## Data Flow
 
-1. On startup, `loc.csv` is parsed into `self.locations_data` (list of dicts)
+1. On startup, `locations.csv` is parsed into `self.locations_data` (list of dicts)
 2. City name prefix index and RMSE cache are built for fast filtering
 3. User selects a city → `on_city_select` fires → `calculate_and_display_prayer_times` renders the Calculated Times tab. Tab switches trigger reference display or conclusion summary
 4. Optimization results are applied back to `self.locations_data` entries and persisted via `rewrite_location_file` (backup → write → remove backup)

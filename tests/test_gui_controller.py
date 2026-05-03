@@ -14,7 +14,7 @@ from src.app.presentation.gui_controller import PrayerGuiController
 
 class TestGuiController(unittest.TestCase):
     def setUp(self):
-        self.controller = PrayerGuiController(REPO_ROOT / "loc.csv")
+        self.controller = PrayerGuiController(REPO_ROOT / "resources" / "locations.csv")
         fixture_path = REPO_ROOT / "tests" / "fixtures" / "parity_matrix.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         self.reference_file = REPO_ROOT / fixture["reference_file"]
@@ -25,7 +25,7 @@ class TestGuiController(unittest.TestCase):
 
         via_controller = self.controller.calculate_city_day(city_name, target_date)
         direct = calculate_city_day_from_loc_csv(
-            city_name, target_date, REPO_ROOT / "loc.csv"
+            city_name, target_date, REPO_ROOT / "resources" / "locations.csv"
         )
 
         self.assertEqual(via_controller.times, direct.times)
