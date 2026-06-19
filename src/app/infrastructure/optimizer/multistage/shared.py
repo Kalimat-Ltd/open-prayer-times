@@ -26,7 +26,10 @@ class Stage1Config:
     enable_geographic_calibration: bool = True
     geo_search_radius_km: float = 10.0
     enable_asr_madhab_detection: bool = True
+    enable_asr_madhab_override_detection: bool = True
     asr_high_error_threshold_minutes: float = 10.0
+    asr_override_min_days: int = 14
+    asr_override_min_improvement_minutes: float = 10.0
     detect_clock_offsets: bool = True
     optimize_prayer_offsets: bool = True
     min_stable_dates_for_offsets: int = 30

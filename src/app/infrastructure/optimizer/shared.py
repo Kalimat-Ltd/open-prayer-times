@@ -88,6 +88,7 @@ class OptimizationResult:
     auxiliary_cities_used: int = 0
     # Adaptive method detection results
     asr_madhab: Optional[int] = None  # 0=Standard, 1=Hanafi; None=unchanged
+    asr_madhab_overrides: Optional[str] = None  # JSON recurring MM-DD override blocks
     calculation_method: Optional[str] = None  # 'angle_based' or 'moonsighting'
     isha_shafaq: Optional[str] = None  # 'general', 'ahmer', 'abyad'
     isha_harag: Optional[int] = None  # 0=off, 1..3 alternate handling

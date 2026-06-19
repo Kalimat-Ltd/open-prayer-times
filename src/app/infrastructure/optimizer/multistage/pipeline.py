@@ -241,6 +241,7 @@ def run_multistage_optimization(
         n_function_evals=0,
         auxiliary_cities_used=0,
         asr_madhab=context.asr_madhab,
+        asr_madhab_overrides=context.asr_madhab_overrides,
         calculation_method=context.calculation_method,
         isha_shafaq=context.isha_shafaq,
         isha_harag=context.isha_harag,

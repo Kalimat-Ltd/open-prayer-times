@@ -80,6 +80,7 @@ _NON_PERSISTENT_OPT_FIELDS = {
 _NULLABLE_FIELD_DEFAULTS = {
     "residual_corrections": "",
     "clock_offsets": "",
+    "asr_madhab_overrides": "",
     "high_lat_start_date": None,
     "high_lat_end_date": None,
     "custom_fajr_angle": None,
