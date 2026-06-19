@@ -27,6 +27,7 @@ class PipelineContext:
     isha_angle: float = 17.0
     calculation_method: str = "angle_based"  # "angle_based" | "moonsighting"
     asr_madhab: int = 0  # 0 = standard, 1 = hanafi
+    asr_madhab_overrides: str = ""  # JSON string with recurring MM-DD override windows
     isha_shafaq: Optional[str] = None  # "general" | "ahmer" | "abyad"
 
     # ── High-latitude parameters (set by Stage 2) ────────────────────────
@@ -67,6 +68,7 @@ class PipelineContext:
         kwargs: Dict[str, Any] = {
             "calculation_method": self.calculation_method,
             "asr_madhab": self.asr_madhab,
+            "asr_madhab_overrides": self.asr_madhab_overrides,
             "high_lat_method": self.high_lat_method,
             "isha_harag": self.isha_harag,
         }
@@ -149,6 +151,7 @@ class PrayerCalculationRequest:
     isha_minutes: float
     target_date: datetime.date
     asr_madhab: int = 0
+    asr_madhab_overrides: str = ""
     fajr_offset: float = 0.0
     shurooq_offset: float = 0.0
     dhuhr_offset: float = 0.0
@@ -181,6 +184,7 @@ class PrayerCalculationRequest:
             "isha_minutes": self.isha_minutes,
             "target_date": self.target_date,
             "asr_madhab": self.asr_madhab,
+            "asr_madhab_overrides": self.asr_madhab_overrides,
             "fajr_offset": self.fajr_offset,
             "shurooq_offset": self.shurooq_offset,
             "dhuhr_offset": self.dhuhr_offset,

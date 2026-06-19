@@ -9,6 +9,7 @@ submits to the process pool.  Separate processes each have their own Python
 interpreter, their own GIL, and therefore impose ZERO GIL pressure on the
 Tkinter main thread.
 """
+
 from __future__ import annotations
 
 from src.app.infrastructure.optimizer.shared import (
@@ -23,6 +24,7 @@ from src.app.infrastructure.optimizer.multistage.pipeline import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _reset_stage1_defaults(loc_dict: dict) -> dict:
     """Reset all Stage-1-tunable fields to neutral defaults.
@@ -39,6 +41,8 @@ def _reset_stage1_defaults(loc_dict: dict) -> dict:
     loc_dict["pressure"] = 1010.0
     loc_dict["temp"] = 10.0
     loc_dict["calculation_method"] = "angle_based"
+    loc_dict["asr_madhab"] = 0
+    loc_dict["asr_madhab_overrides"] = ""
     loc_dict["isha_harag"] = 0
     loc_dict["high_lat_method"] = 0
     loc_dict["high_lat_start_date"] = None
@@ -56,6 +60,7 @@ def _reset_stage1_defaults(loc_dict: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Single-city worker (for optimize_parameters_for_city)
 # ---------------------------------------------------------------------------
+
 
 def _run_single_city_optimization(
     optimization_location_data: dict,
@@ -79,6 +84,7 @@ def _run_single_city_optimization(
 # ---------------------------------------------------------------------------
 # Batch worker entry point
 # ---------------------------------------------------------------------------
+
 
 def _run_city_task(
     country_code: str,
@@ -144,11 +150,15 @@ def _run_city_task(
         tz_name=primary_tz_name,
     )
 
-    return country_code, primary_city["name"], {
-        "opt_result": opt_result,
-        "n_dates": len(primary_dates),
-        "n_aux": len(conservative_aux),
-        "has_residual": bool(opt_result.residual_corrections),
-        "duration_seconds": float(opt_result.duration_seconds or 0.0),
-        "loc_raw": primary_loc_raw,
-    }
+    return (
+        country_code,
+        primary_city["name"],
+        {
+            "opt_result": opt_result,
+            "n_dates": len(primary_dates),
+            "n_aux": len(conservative_aux),
+            "has_residual": bool(opt_result.residual_corrections),
+            "duration_seconds": float(opt_result.duration_seconds or 0.0),
+            "loc_raw": primary_loc_raw,
+        },
+    )

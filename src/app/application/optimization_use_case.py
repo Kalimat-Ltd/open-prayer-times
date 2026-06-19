@@ -31,6 +31,7 @@ def optimize_city_from_reference(
         "isha_angle": city.isha_angle,
         "isha_minutes": city.isha_minutes,
         "asr_madhab": city.asr_madhab,
+        "asr_madhab_overrides": city.asr_madhab_overrides or "",
         "high_lat_method": city.high_lat_method,
         "calculation_method": city.calculation_method,
         "isha_shafaq": city.isha_shafaq,

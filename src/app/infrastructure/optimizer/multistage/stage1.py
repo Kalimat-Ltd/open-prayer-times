@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import minimize, minimize_scalar
 from src.app.domain.models import PipelineContext, Stage1Diagnostics
+from src.app.infrastructure.asr_madhab_overrides import dumps_asr_madhab_overrides
 from src.app.infrastructure.optimizer.objective import (
     _compute_detailed_errors,
     _compute_offsets_direct,
@@ -748,6 +749,203 @@ def _detect_asr_madhab_phase1(
 
     diagnostics["reason"] = "hanafi_not_better"
     return str(current_asr_madhab), diagnostics
+
+
+def _other_asr_madhab(asr_madhab: str) -> str:
+    return "hanafi" if str(asr_madhab) == "standard" else "standard"
+
+
+def _fill_short_date_gaps(
+    dates: List[datetime.date],
+    *,
+    max_gap_days: int = 2,
+) -> List[datetime.date]:
+    ordered = sorted(set(dates))
+    if not ordered:
+        return []
+    filled: List[datetime.date] = [ordered[0]]
+    prev = ordered[0]
+    for curr in ordered[1:]:
+        gap_days = int((curr - prev).days)
+        if 1 < gap_days <= int(max_gap_days) + 1:
+            for offset in range(1, gap_days):
+                filled.append(prev + datetime.timedelta(days=offset))
+        filled.append(curr)
+        prev = curr
+    return sorted(set(filled))
+
+
+def _detect_asr_madhab_overrides(
+    *,
+    params: np.ndarray,
+    dates: List[datetime.date],
+    reference_times: Dict[datetime.date, Dict[str, str]],
+    elevation: float,
+    pressure: float,
+    temperature: float,
+    timezone: float,
+    calculation_method: str,
+    isha_shafaq: Optional[str],
+    config: Stage1Config,
+    base_asr_madhab: str,
+) -> tuple[str, Dict[str, Any]]:
+    alt_asr_madhab = _other_asr_madhab(base_asr_madhab)
+    diagnostics: Dict[str, Any] = {
+        "seasonal_override_enabled": bool(
+            config.enable_asr_madhab_detection
+            and config.enable_asr_madhab_override_detection
+        ),
+        "seasonal_override_reason": "disabled",
+        "seasonal_override_madhab": alt_asr_madhab,
+        "seasonal_override_json": "",
+        "seasonal_override_ranges": [],
+        "seasonal_override_candidate_days": 0,
+        "seasonal_override_days": 0,
+    }
+    if not diagnostics["seasonal_override_enabled"]:
+        return "", diagnostics
+    if not dates:
+        diagnostics["seasonal_override_reason"] = "no_dates"
+        return "", diagnostics
+
+    lat = float(params[0])
+    lon = float(params[1])
+    fajr_angle = float(params[2])
+    isha_angle = float(params[3])
+    high_error_threshold = float(config.asr_high_error_threshold_minutes)
+    min_improvement = float(config.asr_override_min_improvement_minutes)
+    min_days = max(1, int(config.asr_override_min_days))
+
+    daily_rows: List[Dict[str, Any]] = []
+    candidate_dates: List[datetime.date] = []
+    for date_obj in dates:
+        base_vals = _collect_signed_residuals_for_prayer(
+            prayer="asr",
+            lat=lat,
+            lon=lon,
+            fajr_angle=fajr_angle,
+            isha_angle=isha_angle,
+            dates=[date_obj],
+            reference_times=reference_times,
+            elevation=elevation,
+            pressure=pressure,
+            temperature=temperature,
+            timezone=timezone,
+            calculation_method=calculation_method,
+            asr_madhab=base_asr_madhab,
+            isha_shafaq=isha_shafaq,
+        )
+        alt_vals = _collect_signed_residuals_for_prayer(
+            prayer="asr",
+            lat=lat,
+            lon=lon,
+            fajr_angle=fajr_angle,
+            isha_angle=isha_angle,
+            dates=[date_obj],
+            reference_times=reference_times,
+            elevation=elevation,
+            pressure=pressure,
+            temperature=temperature,
+            timezone=timezone,
+            calculation_method=calculation_method,
+            asr_madhab=alt_asr_madhab,
+            isha_shafaq=isha_shafaq,
+        )
+        if not base_vals or not alt_vals:
+            continue
+        base_err = float(base_vals[0])
+        alt_err = float(alt_vals[0])
+        base_abs = abs(base_err)
+        alt_abs = abs(alt_err)
+        improvement = float(base_abs - alt_abs)
+        daily_rows.append(
+            {
+                "date": date_obj,
+                "base_error": base_err,
+                "alt_error": alt_err,
+                "base_abs": base_abs,
+                "alt_abs": alt_abs,
+                "improvement": improvement,
+            }
+        )
+        if (
+            base_abs >= high_error_threshold
+            and alt_abs <= high_error_threshold
+            and improvement >= min_improvement
+        ):
+            candidate_dates.append(date_obj)
+
+    diagnostics["seasonal_override_candidate_days"] = int(len(candidate_dates))
+    if len(candidate_dates) < min_days:
+        diagnostics["seasonal_override_reason"] = "insufficient_candidate_days"
+        return "", diagnostics
+
+    candidate_dates = _fill_short_date_gaps(candidate_dates, max_gap_days=2)
+    candidate_ranges = _contiguous_date_ranges(candidate_dates)
+    accepted_ranges: List[Dict[str, Any]] = []
+    for item in candidate_ranges:
+        days = int(item.get("days") or 0)
+        if days < min_days:
+            continue
+        try:
+            start_date = datetime.date.fromisoformat(str(item.get("start")))
+            end_date = datetime.date.fromisoformat(str(item.get("end")))
+        except (TypeError, ValueError):
+            continue
+        window_rows = [
+            row for row in daily_rows if start_date <= row["date"] <= end_date
+        ]
+        if len(window_rows) < min_days:
+            continue
+        base_mae = float(
+            np.mean(np.asarray([row["base_abs"] for row in window_rows], dtype=float))
+        )
+        alt_mae = float(
+            np.mean(np.asarray([row["alt_abs"] for row in window_rows], dtype=float))
+        )
+        mae_gain = float(base_mae - alt_mae)
+        if (
+            base_mae < high_error_threshold
+            or alt_mae > high_error_threshold
+            or mae_gain < min_improvement
+        ):
+            continue
+        accepted_ranges.append(
+            {
+                **item,
+                "start_month_day": start_date.strftime("%m-%d"),
+                "end_month_day": end_date.strftime("%m-%d"),
+                "base_mae": base_mae,
+                "alt_mae": alt_mae,
+                "mae_gain": mae_gain,
+            }
+        )
+
+    if not accepted_ranges:
+        diagnostics["seasonal_override_reason"] = "no_accepted_ranges"
+        return "", diagnostics
+
+    override_asr_int = 0 if alt_asr_madhab == "standard" else 1
+    override_blocks = [
+        {
+            "start": str(item["start_month_day"]),
+            "end": str(item["end_month_day"]),
+            "asr_madhab": override_asr_int,
+        }
+        for item in accepted_ranges
+    ]
+    override_json = dumps_asr_madhab_overrides(override_blocks)
+    diagnostics.update(
+        {
+            "seasonal_override_reason": "override_detected",
+            "seasonal_override_json": override_json,
+            "seasonal_override_ranges": accepted_ranges,
+            "seasonal_override_days": int(
+                sum(int(item.get("days") or 0) for item in accepted_ranges)
+            ),
+        }
+    )
+    return override_json, diagnostics
 
 
 def optimize_environmental_calibration(
@@ -2712,6 +2910,27 @@ def optimize_pure_astronomical_core(
     )
 
     step_started_at = time.perf_counter()
+    asr_madhab_overrides_json, asr_override_detection = _detect_asr_madhab_overrides(
+        params=np.asarray(best_params, dtype=float),
+        dates=sorted(candidate_dates),
+        reference_times=reference_times_for_corrections,
+        elevation=stage1_elevation,
+        pressure=stage1_pressure,
+        temperature=stage1_temperature,
+        timezone=timezone,
+        calculation_method=(
+            "angle_based" if selected_method == "angles" else str(selected_method)
+        ),
+        isha_shafaq=selected_isha_shafaq,
+        config=cfg,
+        base_asr_madhab=asr_choice,
+    )
+    asr_madhab_detection.update(asr_override_detection)
+    step_timings["asr_madhab_override_detection"] = float(
+        time.perf_counter() - step_started_at
+    )
+
+    step_started_at = time.perf_counter()
     zero_offsets = {field: 0.0 for field in OFFSET_FIELDS}
     selected_asr_madhab = 0 if asr_choice == "standard" else 1
     extra_calc_kwargs = {
@@ -2720,6 +2939,8 @@ def optimize_pure_astronomical_core(
         ),
         "asr_madhab": selected_asr_madhab,
     }
+    if asr_madhab_overrides_json:
+        extra_calc_kwargs["asr_madhab_overrides"] = asr_madhab_overrides_json
     if selected_isha_shafaq is not None:
         extra_calc_kwargs["isha_shafaq"] = str(selected_isha_shafaq)
 
@@ -2821,6 +3042,7 @@ def optimize_pure_astronomical_core(
         calculation_method=calc_method,
         isha_shafaq=selected_isha_shafaq,
         asr_madhab=asr_int,
+        asr_madhab_overrides=asr_madhab_overrides_json,
         elevation=float(stage1_elevation),
         temp=float(stage1_temperature),
         pressure=float(stage1_pressure),

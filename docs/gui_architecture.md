@@ -176,7 +176,7 @@ This allows the GUI code to be split into focused, maintainable modules while pr
 |--------|---------------|
 | `app_shell_and_loading.py` | `__init__`, `create_widgets`, `on_closing`, `on_tab_changed`, `load_locations`, `process_pending_reference_changes`, `refresh_country_filter`, `run_selected_city_optimizer` — root layout, widget creation (including Month/Year selectors and Rounding dropdown), loading lifecycle, reference file watcher setup, status wiring |
 | `city_list_and_calculations.py` | City name/RMSE indexing (SQLite cache), listbox population, filtering (search / country / latitude / RMSE / MAE / N), city selection handling, daily prayer-time rendering with inline diffs and high-lat indicators, clipboard copy, month selection |
-| `city_form_workflows.py` | `create_city_form` (scrollable form with dynamic field visibility based on calculation method and high-lat method, including the Reference Year spinbox), `open_add_city_window`, `open_modify_city_window`, `validate_and_get_form_data` |
+| `city_form_workflows.py` | `create_city_form` (scrollable form with dynamic field visibility based on calculation method and high-lat method, including the Reference Year spinbox and advanced JSON editors for `residual_corrections`, `clock_offsets`, and `asr_madhab_overrides`), `open_add_city_window`, `open_modify_city_window`, `validate_and_get_form_data` |
 | `city_data_and_reference_actions.py` | `save_new_city`, `save_modified_city`, `apply_to_country`, `delete_selected_city` — city CRUD with CSV persistence, country-wide parameter propagation |
 | `summary_and_status_views.py` | `show_conclusion_summary` (per-month per-prayer error analysis with residual and clock-offset accounting, reference-year-aware date loading), `update_status_bar` (optimization coverage statistics) |
 | `constants.py` | `FIELD_NAMES` — canonical `locations.csv` column order (37 fields) |
@@ -199,6 +199,7 @@ This means external edits to reference files (e.g., saving a new schedule from a
 The city list displays live error metrics (MAE, RMSE, sample count N) next to each city that has reference data. Computing these for every city on every refresh would be slow, so the GUI maintains a SQLite-backed cache (`resources/city_indexes.sqlite3`):
 
 - Each city's RMSE/MAE/N is cached with a signature hash derived from the city's current parameters and reference file metadata (mtime, size)
+- The signature includes advanced JSON fields such as `clock_offsets`, `residual_corrections`, and `asr_madhab_overrides`, so cache invalidation stays correct when seasonal Asr behavior changes
 - When a city's parameters or reference file change, the cache entry is invalidated and recomputed
 - The cache is rebuilt lazily on first access or explicitly after optimization applies changes
 

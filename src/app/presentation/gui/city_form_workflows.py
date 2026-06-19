@@ -526,6 +526,34 @@ def create_city_form(self, parent_window, initial_data=None):
     entries["clock_offsets"] = clock_offsets_text
     row_num += 1
 
+    ttk.Label(frame, text="Asr Madhab Overrides:").grid(
+        row=row_num + 1, column=0, sticky="nw", pady=2
+    )
+    asr_override_frame = ttk.Frame(frame)
+    asr_override_frame.grid(row=row_num + 1, column=1, sticky="ew", padx=5, pady=2)
+    asr_override_text = tk.Text(
+        asr_override_frame, width=50, height=4, wrap=tk.NONE, font=("Courier New", 9)
+    )
+    asr_override_scroll_y = ttk.Scrollbar(
+        asr_override_frame, orient=tk.VERTICAL, command=asr_override_text.yview
+    )
+    asr_override_scroll_x = ttk.Scrollbar(
+        asr_override_frame, orient=tk.HORIZONTAL, command=asr_override_text.xview
+    )
+    asr_override_text.configure(
+        yscrollcommand=asr_override_scroll_y.set,
+        xscrollcommand=asr_override_scroll_x.set,
+    )
+    asr_override_text.grid(row=0, column=0, sticky="nsew")
+    asr_override_scroll_y.grid(row=0, column=1, sticky="ns")
+    asr_override_scroll_x.grid(row=1, column=0, sticky="ew")
+    asr_override_frame.grid_columnconfigure(0, weight=1)
+    asr_override_frame.grid_rowconfigure(0, weight=1)
+    if initial_data and initial_data.get("asr_madhab_overrides"):
+        asr_override_text.insert("1.0", initial_data["asr_madhab_overrides"])
+    entries["asr_madhab_overrides"] = asr_override_text
+    row_num += 1
+
     entries["is_official"] = initial_data.get("is_official", 0) if initial_data else 0
 
     frame.grid_columnconfigure(1, weight=1)
@@ -769,6 +797,9 @@ def _validate_and_get_form_data(
 
         clock_offsets_text = entries["clock_offsets"].get("1.0", tk.END).strip()
         data["clock_offsets"] = clock_offsets_text if clock_offsets_text else ""
+
+        asr_overrides_text = entries["asr_madhab_overrides"].get("1.0", tk.END).strip()
+        data["asr_madhab_overrides"] = asr_overrides_text if asr_overrides_text else ""
 
         return data
 

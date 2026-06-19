@@ -9,6 +9,8 @@ import ephem
 from src.app.config import LOC_CSV_PATH
 import pytz  # For timezone handling
 
+from src.app.infrastructure.asr_madhab_overrides import resolve_effective_asr_madhab
+
 # --- Constants ---
 STANDARD_PRESSURE = 1010.0  # mBar
 STANDARD_TEMP = 10.0  # Celsius
@@ -102,6 +104,7 @@ def calculate_prayer_times(
     isha_minutes,
     target_date,
     asr_madhab=0,  # 0 = Standard (Shafi, Maliki, Hanbali), 1 = Hanafi
+    asr_madhab_overrides=None,  # Optional JSON recurring MM-DD override windows
     fajr_offset=0.0,
     shurooq_offset=0.0,
     dhuhr_offset=0.0,
@@ -123,6 +126,8 @@ def calculate_prayer_times(
     # Coerce optional parameters to their expected defaults when None
     if asr_madhab is None:
         asr_madhab = 0
+    if asr_madhab_overrides is None:
+        asr_madhab_overrides = ""
     if fajr_offset is None:
         fajr_offset = 0.0
     if shurooq_offset is None:
@@ -145,6 +150,11 @@ def calculate_prayer_times(
         isha_shafaq = "general"
     if isha_harag is None:
         isha_harag = 0
+    effective_asr_madhab = resolve_effective_asr_madhab(
+        asr_madhab,
+        asr_madhab_overrides,
+        target_date,
+    )
     if custom_fajr_angle is not None:
         try:
             custom_fajr_angle = float(custom_fajr_angle)
@@ -435,7 +445,7 @@ def calculate_prayer_times(
             # Use float for sun.dec and obs.lat for accurate calculation
             diff_deg = abs(float(obs.lat) - float(sun.dec))
 
-            if asr_madhab == 1:
+            if effective_asr_madhab == 1:
                 # Hanafi: shadow = 2x object height
                 alt_asr = math.degrees(math.atan(1.0 / (2.0 + math.tan(diff_deg))))
             else:
@@ -752,6 +762,7 @@ def closest_city_fallback(
                 float(row.get("isha_minutes")) if row.get("isha_minutes") else None
             )
             asr_madhab = int(row.get("asr_madhab") or 0)
+            asr_madhab_overrides = row.get("asr_madhab_overrides") or ""
             fajr_offset = float(row.get("fajr_offset") or 0)
             shurooq_offset = float(row.get("shurooq_offset") or 0)
             dhuhr_offset = float(row.get("dhuhr_offset") or 0)
@@ -771,6 +782,7 @@ def closest_city_fallback(
                 isha_minutes=isha_minutes,
                 target_date=target_date,
                 asr_madhab=asr_madhab,
+                asr_madhab_overrides=asr_madhab_overrides,
                 fajr_offset=fajr_offset,
                 shurooq_offset=shurooq_offset,
                 dhuhr_offset=dhuhr_offset,
@@ -794,6 +806,7 @@ def closest_city_fallback(
                     isha_minutes=isha_minutes,
                     target_date=target_date,
                     asr_madhab=asr_madhab,
+                    asr_madhab_overrides=asr_madhab_overrides,
                     fajr_offset=fajr_offset,
                     shurooq_offset=shurooq_offset,
                     dhuhr_offset=dhuhr_offset,

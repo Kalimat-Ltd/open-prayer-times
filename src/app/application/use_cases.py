@@ -27,6 +27,7 @@ def calculate_city_day_from_loc_csv(
         isha_minutes=city.isha_minutes,
         target_date=target_date,
         asr_madhab=city.asr_madhab,
+        asr_madhab_overrides=city.asr_madhab_overrides or "",
         fajr_offset=city.fajr_offset,
         shurooq_offset=city.shurooq_offset,
         dhuhr_offset=city.dhuhr_offset,

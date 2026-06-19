@@ -17,7 +17,7 @@ Primary city parameter dataset used by GUI, CLI, and runtime calculations.
 | Environment | `elevation`, `pressure`, `temp`, `timezone` |
 | Core Calculation | `fajr_angle`, `isha_angle`, `isha_minutes`, `asr_madhab`, `calculation_method`, `isha_shafaq` |
 | High-Latitude | `high_lat_method`, `isha_harag`, `high_lat_start_date`, `high_lat_end_date`, `custom_fajr_angle`, `custom_isha_angle`, `high_lat_fallback_method` |
-| Corrections | `residual_corrections`, `clock_offsets` |
+| Advanced JSON | `residual_corrections`, `clock_offsets`, `asr_madhab_overrides` |
 | Per-Prayer Offsets | `fajr_offset`, `shurooq_offset`, `dhuhr_offset`, `asr_offset`, `maghrib_offset`, `isha_offset` |
 | Flags | `is_official`, `is_optimized` |
 | Reference | `reference_year` |
@@ -32,6 +32,7 @@ Primary city parameter dataset used by GUI, CLI, and runtime calculations.
 - `high_lat_method` — which fallback to use when Fajr or Isha cannot be computed astronomically (sun doesn't reach the required angle): `0` = Angle-Based Fraction, `1` = One Seventh of Night, `2` = Midnight, `3` = Aqrab Al-Bilad (nearest-city transfer)
 - `high_lat_start_date` / `high_lat_end_date` — YYYY-MM-DD window during which `high_lat_method` is active. Outside this window, standard astronomical calculation is used
 - `reference_year` — the calendar year the reference prayer-time data was sourced from (e.g., `2025`). Reference text files use a `DD-Mon` date format with no embedded year, so a year must be supplied externally to construct full `datetime.date` keys. When set, this value is used by the optimizer, the conclusion-tab error summary, and the RMSE cache to load and evaluate reference data against the correct year's dates. When empty, the code falls back to the GUI display year (`year_var`) and then to today's year. You can set this value from the Modify City form
+- `asr_madhab_overrides` — optional JSON payload for recurring seasonal Asr madhab switching; see Section 3 below
 - `residual_corrections` / `clock_offsets` — JSON payloads; see Section 3 below
 - Canonical column order is managed by GUI constants (`FIELD_NAMES` in `src/app/presentation/gui/constants.py`, 37 fields total)
 - Many values may be empty/nullable in the source CSV and are normalized to sensible defaults at runtime
@@ -109,7 +110,24 @@ Serialized JSON: array of date-window blocks.
 
 Example: `{"start": "03-30", "end": "10-26", "offset": 60}` means "add 60 minutes to every prayer time between 30 Mar and 26 Oct" — a typical summer-time clock offset.
 
-### 3.2 `residual_corrections`
+### 3.2 `asr_madhab_overrides`
+
+Some cities use one Asr madhab for most of the year, but switch to the other madhab during a recurring seasonal period. Stage 1 can detect this pattern after it finds the stable-day base madhab.
+
+Serialized JSON: array of recurring month-day blocks.
+
+```json
+[
+  {"start": "03-29", "end": "10-24", "asr_madhab": 0}
+]
+```
+
+- `start` / `end` — month-day range (`MM-DD`, no year; applies each year)
+- `asr_madhab` — override value for matching dates (`0` = Standard, `1` = Hanafi)
+
+At runtime, the calculator first checks this payload for the target date. If a block matches, its `asr_madhab` is used for Asr; otherwise the row's base `asr_madhab` is used.
+
+### 3.3 `residual_corrections`
 
 After Stage 1's structural fit and Stage 2's high-latitude adaptation, some date ranges may still show systematic per-prayer errors that follow a smooth seasonal curve. Stage 3 fits a **Fourier harmonic model** (`PrayerResidualModel`) to these residuals — essentially a small periodic correction curve per prayer that varies smoothly over the year.
 

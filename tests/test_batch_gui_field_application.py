@@ -24,6 +24,7 @@ def _make_location_row():
         "maghrib_offset": None,
         "isha_offset": None,
         "asr_madhab": 0,
+        "asr_madhab_overrides": "",
         "calculation_method": "angle_based",
         "isha_shafaq": "general",
         "high_lat_method": 0,
@@ -55,6 +56,7 @@ def _make_opt_result(**extra):
             "isha_offset": -2.0,
         },
         "asr_madhab": 1,
+        "asr_madhab_overrides": '[{"start":"03-29","end":"10-24","asr_madhab":0}]',
         "calculation_method": "moonsighting",
         "isha_shafaq": "ahmer",
         "high_lat_method": 2,
@@ -96,6 +98,10 @@ def test_apply_optimization_result_auto_applies_matching_fields_and_offsets():
 
     assert loc["residual_corrections"] == '{"fitted":true}'
     assert loc["clock_offsets"] == '[{"start":"03-31","end":"10-27","offset":60}]'
+    assert (
+        loc["asr_madhab_overrides"]
+        == '[{"start":"03-29","end":"10-24","asr_madhab":0}]'
+    )
     assert loc["future_field"] == "new-value"
     assert loc["is_optimized"] == 1
 
@@ -110,6 +116,7 @@ def test_apply_optimization_result_stage1_only_resets_and_skips_offsets():
         offsets={"fajr_offset": -4.0},
         residual_corrections=None,
         clock_offsets=None,
+        asr_madhab_overrides=None,
     )
 
     _apply_optimization_result_to_location(
@@ -126,6 +133,7 @@ def test_apply_optimization_result_stage1_only_resets_and_skips_offsets():
     assert loc["fajr_offset"] is None
     assert loc["residual_corrections"] == ""
     assert loc["clock_offsets"] == ""
+    assert loc["asr_madhab_overrides"] == ""
     assert loc["is_optimized"] == 1
 
 
@@ -155,6 +163,7 @@ def test_apply_optimization_result_clears_stale_residual_and_clock_when_none():
     opt = _make_opt_result(
         residual_corrections=None,
         clock_offsets=None,
+        asr_madhab_overrides=None,
     )
 
     _apply_optimization_result_to_location(
@@ -166,3 +175,4 @@ def test_apply_optimization_result_clears_stale_residual_and_clock_when_none():
 
     assert loc["residual_corrections"] == ""
     assert loc["clock_offsets"] == ""
+    assert loc["asr_madhab_overrides"] == ""

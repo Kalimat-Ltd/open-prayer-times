@@ -167,6 +167,8 @@ def show_conclusion_summary(self, location_data):
                     isha_minutes=location_data["isha_minutes"],
                     isha_shafaq=location_data.get("isha_shafaq") or "general",
                     asr_madhab=location_data.get("asr_madhab") or 0,
+                    asr_madhab_overrides=location_data.get("asr_madhab_overrides")
+                    or "",
                     isha_harag=location_data.get("isha_harag") or 0,
                     high_lat_method=location_data.get("high_lat_method") or 0,
                     target_date=datetime.date(year, m, day),
