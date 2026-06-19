@@ -29,6 +29,7 @@ def estimate_city_angles_from_reference(
             "calculation_method": city.calculation_method,
             "isha_shafaq": city.isha_shafaq,
             "asr_madhab": city.asr_madhab,
+            "asr_madhab_overrides": city.asr_madhab_overrides or "",
             "high_lat_method": city.high_lat_method,
             "isha_harag": city.isha_harag,
         },
