@@ -40,6 +40,7 @@ Each stage returns a lightweight diagnostics dataclass:
 
 - Fits structural parameters first (coordinates, angles, method behavior)
 - Filters artifact/non-solar dates to isolate clean stable days
+- Detects both the stable-day base `asr_madhab` and any recurring `asr_madhab_overrides` windows that are justified by Asr-only residuals
 - Runs environmental calibration (elevation → temperature → pressure)
 - Produces stable baseline parameters, clock-shift blocks, and stable-date offsets
 
@@ -73,6 +74,7 @@ See [stage3_optimizer.md](stage3_optimizer.md) for full details.
 
 The pipeline returns `OptimizationResult` containing:
 - fitted parameters (angles, coordinates, environment)
+- adaptive method/juristic fields (`calculation_method`, `asr_madhab`, `asr_madhab_overrides`, `isha_shafaq`, high-lat settings)
 - aggregate and per-prayer metrics (MAE, RMSE)
 - correction payloads (offsets, residual JSON, clock blocks)
 - convergence and timing diagnostics

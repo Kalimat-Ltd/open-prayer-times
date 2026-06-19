@@ -7,6 +7,7 @@ It uses a multi-stage optimization pipeline to fit city parameters from referenc
 ## Features
 
 - **Prayer-time calculation** — astronomical engine (PyEphem) with angle-based and moonsighting modes, high-latitude handling, and environmental parameters
+- **Seasonal Asr switching** — optional recurring `asr_madhab_overrides` windows let a city use one base Asr madhab and switch to the other during part of the year
 - **Multi-stage optimizer** — three-stage pipeline (astronomical core → high-latitude adaptation → correction layers) for reference-driven city calibration
 - **GUI application** — tkinter desktop app for browsing cities, calculating prayer times, running single-city optimization, and batch country optimization
 - **CLI tools** — command-line interfaces for day calculation
@@ -103,6 +104,7 @@ Before stage details, see the shared terminology guide: [docs/parameter_glossary
 
 - **Stage 1 — Astronomical core + normalization**
   - calibrates core parameters (coordinates, fajr/isha angles, method behavior)
+  - detects stable-day `asr_madhab` and seasonal `asr_madhab_overrides` when the reference schedule switches Asr convention during part of the year
   - performs geographic and environmental calibration
   - detects and normalizes reference clock-shift blocks
   - fits stable-date prayer offsets

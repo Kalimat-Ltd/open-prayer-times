@@ -13,7 +13,7 @@ The project combines:
 Start with [parameter_glossary.md](parameter_glossary.md). It defines:
 
 - `fajr_angle`, `isha_angle`, `isha_minutes`
-- `calculation_method`, `asr_madhab`, `isha_shafaq`
+- `calculation_method`, `asr_madhab`, `asr_madhab_overrides`, `isha_shafaq`
 - `high_lat_method`, `isha_harag`, custom high-lat angles
 - per-prayer offsets, `clock_offsets`, `residual_corrections`
 - stable vs unstable day concepts used by the optimizer
@@ -24,7 +24,7 @@ This glossary is the canonical terminology source for all architecture docs.
 
 - Produce accurate daily prayer times per city using astronomical calculations (PyEphem)
 - Fit city-specific parameters from authoritative reference files
-- Handle difficult regions (high latitude, seasonal clock shifts, unstable periods)
+- Handle difficult regions (high latitude, seasonal Asr madhab changes, seasonal clock shifts, unstable periods)
 
 ## Real-World Challenges
 

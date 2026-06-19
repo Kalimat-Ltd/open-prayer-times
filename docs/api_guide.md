@@ -129,7 +129,7 @@ result = run_multistage_optimization(
   tz_name="Africa/Cairo",
 )
 
-print(result.calculation_method, result.asr_madhab)
+print(result.calculation_method, result.asr_madhab, result.asr_madhab_overrides)
 ```
 
 ## 5) Integration guidance

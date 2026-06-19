@@ -26,6 +26,15 @@ This page defines the key parameters and concepts used across calculation and op
   Asr juristic mode:
   - `0` = Standard
   - `1` = Hanafi
+- `asr_madhab_overrides`:
+  Optional JSON payload that overrides `asr_madhab` during recurring seasonal windows. Each block uses `MM-DD` month-day boundaries and an explicit override madhab, for example:
+  `[{"start":"03-29","end":"10-24","asr_madhab":0}]`
+
+  Runtime precedence is:
+  1. use `asr_madhab_overrides` when the target date falls inside a matching block
+  2. otherwise use the base `asr_madhab`
+
+  This is additive: it does not replace high-latitude fields, per-prayer offsets, `clock_offsets`, or `residual_corrections`.
 - `isha_shafaq`:
   Moonsighting twilight variant — only meaningful when `calculation_method` is `moonsighting`. Controls which twilight criterion defines the end of Isha:
   - `ahmer` — red twilight (Shafaq Ahmer); preferred by Shafi'i, Maliki, Hanbali
@@ -64,6 +73,8 @@ At high latitudes (roughly above 48°), the sun may not dip far enough below the
   JSON-encoded reference clock-shift blocks (e.g., DST-style periods) discovered during optimization and applied as date-window offsets.
 - `residual_corrections`:
   JSON-encoded harmonic residual model (`PrayerResidualModel`) learned on unstable periods.  The JSON payload embeds explicit `active_month_day_ranges`; corrections are applied **only** on dates within those ranges.  If the payload has no ranges, the model produces zero corrections everywhere — no fallback is attempted.
+
+`asr_madhab_overrides` differs from these correction layers: it switches the Asr juristic rule itself instead of adding minutes after calculation.
 
 ## 5) Environment Parameters
 
@@ -115,6 +126,9 @@ This section is a practical guide for how parameters usually shift prayer times 
 - `asr_madhab`:
   Affects Asr.
   Hanafi gives later Asr.
+- `asr_madhab_overrides`:
+  Affects Asr only on matching dates.
+  Lets a city use one base madhab for stable days while switching to the other madhab during a recurring seasonal window.
 - `temp`:
   Slightly affects mainly Shurooq and Maghrib.
   Higher temperature tends to give later Shurooq and earlier Maghrib.
@@ -130,7 +144,7 @@ This section is a practical guide for how parameters usually shift prayer times 
 - **Fajr**: `latitude`, `longitude`, `fajr_angle`
 - **Shurooq**: `latitude`, `longitude`, `temp`, `pressure`, `elevation`
 - **Dhuhr**: `longitude` is the core driver. In some countries/methodologies, a fixed **safety buffer** is added after calculated zawal (solar noon) to avoid entering prayer at the edge of **وقت النهي**; this shifts published Dhuhr later than pure astronomical noon
-- **Asr**: `latitude`, `longitude`, `asr_madhab`, `pressure`
+- **Asr**: `latitude`, `longitude`, `asr_madhab`, `asr_madhab_overrides`, `pressure`
 - **Maghrib**: `latitude`, `longitude`, `temp`, `pressure`, `elevation`
 - **Isha**: `latitude`, `longitude`, `isha_angle`, `elevation`
 

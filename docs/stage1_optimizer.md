@@ -5,7 +5,7 @@
 Before implementation details, read [parameter_glossary.md](parameter_glossary.md) for the canonical definitions of:
 
 - `fajr_angle`, `isha_angle`, `isha_minutes`
-- `calculation_method`, `asr_madhab`, `isha_shafaq`
+- `calculation_method`, `asr_madhab`, `asr_madhab_overrides`, `isha_shafaq`
 - `clock_offsets`, per-prayer offsets, `residual_corrections`
 - stable vs unstable days
 
@@ -50,14 +50,15 @@ High-level sequence in `optimize_pure_astronomical_core(...)`:
 3. **Build filtered candidate set** — after removing clock-shifted and non-solar dates, assemble the pool of "clean" dates used for structural fitting
 4. **Iteratively optimize core params and clean-day selection** — run a robust optimization loop (Huber/Tukey loss) over latitude, longitude, fajr_angle, and isha_angle. After each pass, re-evaluate which dates qualify as "clean" vs. outlier, and repeat until the clean set stabilizes. This avoids fitting core parameters to dates that are actually problematic
 5. **Method/shafaq selection** — compare `angle_based` vs `moonsighting` (and shafaq variants) to identify which calculation method best matches the reference data
-6. **Optional Asr madhab detection** — if Asr errors are high, test Standard vs. Hanafi Asr to find the better fit
-7. **Local MAE angle polish** — fine-grid search around the current fajr_angle and isha_angle to minimize MAE on clean dates
-8. **Geographic calibration** — grid-search longitude, then latitude, within a configurable radius to compensate for systematic reference biases
-9. **Environmental calibration** — sequential grid search over elevation, temperature, and pressure to fine-tune atmospheric refraction effects
-10. **Final quick angle retest** — one more angle polish pass after geographic/environmental changes
-11. **Clock-shift block normalization** — build the final `clock_offsets` JSON payload from detected clock-shift windows
-12. **Stable-date offset fitting** — compute per-prayer constant minute offsets on stable dates to absorb any remaining systematic bias
-13. **Build `PipelineContext` + `Stage1Diagnostics`** — package all fitted parameters, correction payloads, and timing metadata for downstream stages
+6. **Optional Asr madhab base detection** — if Asr errors are high on stable days, test Standard vs. Hanafi Asr to find the better year-round base fit
+7. **Seasonal Asr override detection** — re-scan Asr-only residuals across candidate dates; if the alternate madhab cleanly fixes a long contiguous high-error window, emit `asr_madhab_overrides`
+8. **Local MAE angle polish** — fine-grid search around the current fajr_angle and isha_angle to minimize MAE on clean dates
+9. **Geographic calibration** — grid-search longitude, then latitude, within a configurable radius to compensate for systematic reference biases
+10. **Environmental calibration** — sequential grid search over elevation, temperature, and pressure to fine-tune atmospheric refraction effects
+11. **Final quick angle retest** — one more angle polish pass after geographic/environmental changes
+12. **Clock-shift block normalization** — build the final `clock_offsets` JSON payload from detected clock-shift windows
+13. **Stable-date offset fitting** — compute per-prayer constant minute offsets on stable dates to absorb any remaining systematic bias
+14. **Build `PipelineContext` + `Stage1Diagnostics`** — package all fitted parameters, correction payloads, and timing metadata for downstream stages
 
 ## 5) Core optimization vector
 
@@ -74,7 +75,7 @@ Environmental variables (`elevation`, `temp`, `pressure`) are calibrated in dedi
 
 ### 6.1 `PipelineContext` fields set/updated by Stage 1
 
-- Core: `lat`, `lon`, `fajr_angle`, `isha_angle`, `calculation_method`, `isha_shafaq`, `asr_madhab`
+- Core: `lat`, `lon`, `fajr_angle`, `isha_angle`, `calculation_method`, `isha_shafaq`, `asr_madhab`, `asr_madhab_overrides`
 - Environment: `elevation`, `temp`, `pressure`
 - Corrections: `offsets`, `offsets_accepted`, `clock_offsets`, `clock_blocks_count`
 - Date metadata: `excluded_date_ranges`, `artifact_ignored_dates`, `dates_used_for_core`
@@ -120,7 +121,10 @@ Environmental variables (`elevation`, `temp`, `pressure`) are calibrated in dedi
 ### Asr detection
 
 - `enable_asr_madhab_detection`
+- `enable_asr_madhab_override_detection`
 - `asr_high_error_threshold_minutes`
+- `asr_override_min_days`
+- `asr_override_min_improvement_minutes`
 
 ### Clock normalization and offsets
 
@@ -151,3 +155,4 @@ Focused tests:
 - `tests/test_multistage_stage1_paris.py`
 - `tests/test_multistage_stage1_achim_geo.py`
 - `tests/test_multistage_stage1_asr_detection_kabul.py`
+- `tests/test_multistage_stage1_asr_override_oslo.py`
