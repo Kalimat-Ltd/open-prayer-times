@@ -201,6 +201,7 @@ def _rmse_cache_signature_for_city(self, location_data, ref_file):
         "isha_offset": location_data.get("isha_offset"),
         "clock_offsets": location_data.get("clock_offsets"),
         "residual_corrections": location_data.get("residual_corrections"),
+        "asr_madhab_overrides": location_data.get("asr_madhab_overrides"),
     }
     blob = json.dumps(serializable, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha1(blob).hexdigest()
@@ -410,6 +411,7 @@ def _compute_city_rmse_from_reference(self, location_data):
                 isha_minutes=location_data.get("isha_minutes"),
                 isha_shafaq=location_data.get("isha_shafaq") or "general",
                 asr_madhab=location_data.get("asr_madhab") or 0,
+                asr_madhab_overrides=location_data.get("asr_madhab_overrides") or "",
                 isha_harag=location_data.get("isha_harag") or 0,
                 high_lat_method=location_data.get("high_lat_method") or 0,
                 high_lat_start_date=location_data.get("high_lat_start_date"),
@@ -964,6 +966,7 @@ def calculate_and_display_prayer_times(self, location_data):
                 isha_minutes=location_data.get("isha_minutes", 0.0),
                 isha_shafaq=location_data.get("isha_shafaq", "general"),
                 asr_madhab=location_data["asr_madhab"],
+                asr_madhab_overrides=location_data.get("asr_madhab_overrides") or "",
                 isha_harag=location_data["isha_harag"],
                 high_lat_method=location_data["high_lat_method"],
                 target_date=current_date,
@@ -1177,6 +1180,7 @@ def copy_times_to_clipboard(self):
                 isha_minutes=selected_data["isha_minutes"],
                 isha_shafaq=selected_data["isha_shafaq"],
                 asr_madhab=selected_data["asr_madhab"],
+                asr_madhab_overrides=selected_data.get("asr_madhab_overrides") or "",
                 isha_harag=selected_data["isha_harag"],
                 high_lat_method=selected_data["high_lat_method"],
                 target_date=current_date,

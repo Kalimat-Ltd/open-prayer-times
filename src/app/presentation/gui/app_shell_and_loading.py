@@ -679,6 +679,7 @@ def _parse_location_row(self, row, row_num):
         location["reference_year"] = _to_int(row.get("reference_year"), None)
         location["residual_corrections"] = row.get("residual_corrections", "") or ""
         location["clock_offsets"] = row.get("clock_offsets", "") or ""
+        location["asr_madhab_overrides"] = row.get("asr_madhab_overrides", "") or ""
         return location
     except Exception as e:
         print(
@@ -711,6 +712,7 @@ def load_locations(self):
                     "custom_fajr_angle",
                     "custom_isha_angle",
                     "high_lat_fallback_method",
+                    "asr_madhab_overrides",
                 )
                 if field not in header_fields
             ]
@@ -813,6 +815,9 @@ def _format_location_for_file(self, location_data):
             # Return raw JSON string — csv.writer will quote/escape it
             values.append(str(value) if value else "")
         elif field == "clock_offsets":
+            # Return raw JSON string — csv.writer will quote/escape it
+            values.append(str(value) if value else "")
+        elif field == "asr_madhab_overrides":
             # Return raw JSON string — csv.writer will quote/escape it
             values.append(str(value) if value else "")
         elif isinstance(value, (int, float)):

@@ -37,4 +37,5 @@ FIELD_NAMES = [
     "reference_year",
     "residual_corrections",
     "clock_offsets",
+    "asr_madhab_overrides",
 ]
