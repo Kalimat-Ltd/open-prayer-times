@@ -22,6 +22,7 @@ class LocationRecord:
     isha_shafaq: str
     high_lat_method: int
     asr_madhab: int
+    asr_madhab_overrides: Optional[str]
     isha_harag: int
     fajr_offset: float
     shurooq_offset: float
@@ -111,6 +112,9 @@ class CsvLocationRepository:
                         isha_shafaq=row.get("isha_shafaq") or "general",
                         high_lat_method=int(float(row.get("high_lat_method") or 0)),
                         asr_madhab=int(float(row.get("asr_madhab") or 0)),
+                        asr_madhab_overrides=_parse_optional_str(
+                            row.get("asr_madhab_overrides", "")
+                        ),
                         isha_harag=int(float(row.get("isha_harag") or 0)),
                         fajr_offset=float(row.get("fajr_offset") or 0.0),
                         shurooq_offset=float(row.get("shurooq_offset") or 0.0),
